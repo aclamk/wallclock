@@ -1,0 +1,11 @@
+SECTIONS
+{
+  . = 0x100;
+  .text : { *(.text) }
+/*  . = 0x8000000; */
+  .data : { *(.data) }
+  .bss : { *(.bss) }
+  .comment : { *(.comment) }
+  .note.gnu.build-id : { *(.note.gnu.build-id) }
+  
+}
