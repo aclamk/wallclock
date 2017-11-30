@@ -19,6 +19,12 @@
 #include <atomic>
 #include <semaphore.h>
 
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+
+
+#include "callstep.h"
+
 extern "C"
 int64_t _rax_test(uint64_t cnt);
 
@@ -94,8 +100,7 @@ int tightloop(void* arg)
 // ./include/tdep-x86_64/libunwind_i.h:228:#define tdep_get_as(c)                  ((c)->dwarf.as)
 // ./include/tdep-x86_64/libunwind_i.h:229:#define tdep_get_as_arg(c)              ((c)->dwarf.as_arg)
 
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
+
 
 bool b = false;
 unw_cursor_t cursor2;
@@ -203,6 +208,15 @@ public:
     return pos;
   }
 
+  inline uint64_t* prev(uint64_t* pos)
+  {
+    if (pos == ip_table)
+      pos = ip_table + (size - 1);
+    else
+      pos--;
+    return pos;
+  }
+
   void inline advance(size_t how_much)
   {
     produced += how_much;
@@ -218,16 +232,20 @@ public:
 
 struct conveyor conv(4096);
 
-void get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp)
+void get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, uint64_t marker)
 {
   unw_cursor_t cursor;
   unw_context_t uc;
   unw_word_t ip, sp;
   unw_getcontext(&uc);
   uc.uc_mcontext.gregs[REG_RBP] = rbp;
-  uc.uc_mcontext.gregs[REG_RIP] = rip;
+  uc.uc_mcontext.gregs[REG_RIP] = rip+1;
   uc.uc_mcontext.gregs[REG_RSP] = rsp;
 
+  if (rip - (uint64_t)&rand <16)
+    {
+      printf("\n----- close enough %lx\n",rip);
+    }
   size_t count = 0;
   uint64_t* pos = conv.produce_pos();
   size_t avail = conv.produce_avail();
@@ -239,17 +257,47 @@ void get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp)
   count++;
   avail--;
   unw_init_local(&cursor, &uc);
+  bool b=!(rip&0x03f);
+  uint64_t rbp_arch;
+  uint64_t rsp_arch;
   while (unw_step(&cursor) > 0)
   {
+    unw_get_reg(&cursor, UNW_REG_SP, &rsp_arch);
+
     if (avail == 0) {
       return;
     }
     unw_get_reg(&cursor, UNW_REG_IP, &ip);
+    if (ip>0x800000000000L){
+      printf("#%ld (%d) XXXXX = %lx SP=%lx rsp=%lx rip=%lx rand=%lx\n", count, marker, ip,rsp_arch,rsp,rip, &rand);
+      printf("XXXXX rsp=%lx rbp=%lx *sp=%lx *(rbp+8)=%lx\n", rsp, rbp, *(uint64_t*)(rsp), *(uint64_t*)(rbp+8));
+      //unw_set_reg(&cursor, UNW_REG_IP, ip>>8);
+//      b=true;
+      {
+        unw_cursor_t cursor1;
+        unw_init_local(&cursor1, &uc);
+        while (unw_step(&cursor1) > 0)
+        {
+          unw_word_t ip1,sp1;
+          unw_get_reg(&cursor1, UNW_REG_IP, &ip1);
+          unw_get_reg(&cursor1, UNW_REG_SP, &sp1);
+          printf(">>>> sp=%lx ip=%lx\n",sp1, ip1);
+        }
+      }
+    }
+    if (b){
+     // printf("#%d (%d) _____ = %lx SP=%lx rsp=%lx\n", count, marker, ip,rsp_arch,rsp);
+      //unw_set_reg(&cursor, UNW_REG_IP, ip>>8);
+//      b=true;
+    }
     *pos = ip;
     pos = conv.next(pos);
     count++;
     avail--;
   }
+  //if(!(rip&0xfff))
+  //  printf("#%d (%d) ____ = %lx SP=%lx rsp=%lx\n", count, marker, ip,rsp_arch,rsp);
+
   conv.advance(count);
   if (avail < conv.size/2) {
     //make sure reader is notified
@@ -260,7 +308,7 @@ void get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp)
 
 
 
-void peek_results()
+void peek_results_old()
 {
   printf("conv_pr= %p\n",&conv);
   printf("peek results prod=%p cons=%p prod_free=%d cons_free=%d\n",
@@ -274,22 +322,92 @@ void peek_results()
     size_t avail = conv.consume_avail();
     size_t avail_copy = avail;
 
+    unw_cursor_t cursor;
+    unw_context_t uc;
+    unw_getcontext(&uc);
+    uc.uc_mcontext.gregs[REG_RBP] = 0;//rbp;
+    uc.uc_mcontext.gregs[REG_RSP] = 0;//rsp;
+    unw_init_local(&cursor, &uc);
+
     while (avail > 0)
     {
       char buffer[100];
       unw_word_t diff;
-      unw_cursor_t cursor;
-      unw_context_t uc;
-      unw_getcontext(&uc);
-      uc.uc_mcontext.gregs[REG_RBP] = 0;//rbp;
-      uc.uc_mcontext.gregs[REG_RIP] = *pos;
-      uc.uc_mcontext.gregs[REG_RSP] = 0;//rsp;
-
-      unw_init_local(&cursor, &uc);
-      //unw_set_reg(&cursor2, UNW_REG_IP, ip);
+      unw_set_reg(&cursor, UNW_REG_IP, *pos);
       //unw_set_reg(&cursor2, UNW_REG_SP, sp);
       unw_get_proc_name(&cursor, buffer, 99, &diff);
-      //printf ("# ip = %lx, [%s+%ld]\n", (long) *pos, buffer, diff);
+      printf ("# ip = %lx, [%s+%ld]\n", (long) *pos, buffer, diff);
+
+      std::string name;
+      uint64_t diff1;
+      std::tie(name, diff1) = callstep::get_symbol(*pos);
+      printf ("# ip = %lx, [%s+%ld]\n", (long) *pos, name.c_str(), diff1);
+
+      //printf ("# ip = %lx, \n", (long) *pos);
+      pos = conv.next(pos);
+      avail--;
+
+    }
+    conv.consumed += avail_copy;
+  }
+}
+
+callstep* root = nullptr;
+void peek_results()
+{
+  printf("conv_pr= %p\n",&conv);
+  printf("peek results prod=%p cons=%p prod_free=%d cons_free=%d\n",
+         conv.produce_pos(), conv.consume_pos(), conv.produce_avail(), conv.consume_avail());
+  if (sem_trywait(&conv.notify) == 0)
+  {
+    printf("NOTIFIED\n");
+    //notified.
+
+    uint64_t* pos = conv.consume_pos();
+
+    size_t avail = conv.consume_avail();
+    size_t avail_copy = avail;
+/*
+    unw_cursor_t cursor;
+    unw_context_t uc;
+    unw_getcontext(&uc);
+    uc.uc_mcontext.gregs[REG_RBP] = 0;//rbp;
+    uc.uc_mcontext.gregs[REG_RSP] = 0;//rsp;
+    unw_init_local(&cursor, &uc);
+*/
+    if (root == nullptr)
+    {
+      root = new callstep(std::string(), 0);
+      //static callstep root(std::string(), 0);
+    }
+
+    while (avail > 0)
+    {
+      uint64_t* pos_i = pos;
+      size_t count = 0;
+      while (*pos_i != 0)
+      {
+        pos_i = conv.next(pos_i);
+        count++;
+      }
+      pos = pos_i;
+      pos_i = conv.prev(pos_i);
+      callstep* node = root;
+      while (count > 0)
+      {
+        node->hit_count++;
+        //printf ("# ip = %lx, [%s] base=%lx cnt=%ld\n", (long) *pos_i, node->name.c_str(), node->base_addr, node->hit_count);
+        node = node->find_function(*pos_i);
+        pos_i = conv.prev(pos_i);
+        count --;
+      }
+      node->hit_count++;
+
+      //std::string name;
+      //uint64_t diff1;
+      //std::tie(name, diff1) = callstep::get_symbol(*pos);
+     // printf ("# ip = %lx, [%s+%ld]\n", (long) *pos, name.c_str(), diff1);
+
       //printf ("# ip = %lx, \n", (long) *pos);
       pos = conv.next(pos);
       avail--;
@@ -305,17 +423,17 @@ void peek_results()
 #define BT_BUF_SIZE 100
 
 extern "C" void grab_callstack(void);
-extern "C" void my_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp);
+extern "C" void my_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, uint64_t marker);
 
 
 std::atomic<bool> my_lock{false};
-void my_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp)
+void my_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, uint64_t marker)
 {
   if(my_lock.exchange(true) == false)
   {
     //printf("Hello rip=%lx rbp=%lx rsp=%lx\n",rip, rbp, rsp);
     //show_backtrace(rip, rbp, rsp);
-    get_backtrace(rip, rbp, rsp);
+    get_backtrace(rip, rbp, rsp, marker);
 
     assert(my_lock.exchange(false) == true);
   }
@@ -327,6 +445,8 @@ void _wrapper(void);
 extern "C"
 void _wrapper_regs_provided(void);
 
+extern "C"
+void _wrapper_to_func(void);
 
 
 
@@ -940,7 +1060,6 @@ private:
     return ret;
   }
 
-
   int setup_execution_frame(user_regs_struct& regs,
                             const user_regs_struct& previous_regs)
   {
@@ -962,6 +1081,35 @@ private:
       ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
     return ret;
   }
+public:
+  int setup_execution_func(user_regs_struct& regs,
+                            interruption_func func,
+                            uint64_t arg1 = 0,
+                            uint64_t arg2 = 0,
+                            uint64_t arg3 = 0)
+  {
+    int ret;
+    regs.rsp -= ( 128 + 8);
+    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)func);
+    regs.rsp -= 8;
+    if (ret == 0)
+      ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)arg1);
+    regs.rsp -= 8;
+    if (ret == 0)
+      ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)arg2);
+    regs.rsp -= 8;
+    if (ret == 0)
+      ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)arg3);
+    regs.rsp -= 8;
+    if (ret == 0)
+      ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
+
+    regs.rip = (uint64_t)_wrapper_to_func;
+    if (ret == 0)
+      ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
+    return ret;
+  }
+
 
 public:
   bool seize(pid_t target)
@@ -1047,9 +1195,18 @@ public:
   }
 
 };
+extern "C"
+void _test_do_print(void* cs,void* a, void* b);
+void _test_do_print(void* cs,void* a, void* b)
+{
+  printf("test_do_print %p %p %p\n",cs, a, b);
+}
 
-
-
+void do_print(callstep** cs)
+{
+  printf("xxxx %p\n",cs);
+  (*cs)->print(0, std::cout);
+}
 
 bool probe(int target_pid)
 {
@@ -1067,7 +1224,7 @@ bool probe(int target_pid)
   if (! pt.signal_interrupt())
     return false;
 
-  for (int i=0;i<1000000;i++)
+  for (int i=0;i<100000;i++)
   {
     if ((i%100) == 0)
     std::cout << "it " << i << std::endl;
@@ -1088,6 +1245,24 @@ bool probe(int target_pid)
     ret = ptrace(PTRACE_INTERRUPT, target_pid, NULL, 0);
     assert(ret == 0);
   }
+
+  waitpid(target_pid, nullptr, 0);
+  ptrace(PTRACE_SINGLESTEP, target_pid, nullptr, nullptr);
+  waitpid(target_pid, nullptr, 0);
+
+
+
+  std::cout << "finished" << std::endl;
+  ret = ptrace(PTRACE_GETREGS, target_pid, nullptr, &regs);
+  if (ret != 0)
+    return false;
+  std::cout << "finished 1" << std::endl;
+  pt.setup_execution_func(regs, (interruption_func*)do_print, (uint64_t)&root);
+  pt.cont();
+  std::cout << "finished 2 " << &root << std::endl;
+  sleep(1);
+  std::cout << "finished 3" << std::endl;
+
 }
 
 
@@ -1128,13 +1303,13 @@ int main(int argc, char** argv)
   pthread_t thr;
   char *vstack = (char*)malloc(STACK_SIZE);
   pid_t v;
-  if (clone(tightloop, vstack + STACK_SIZE, CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO, NULL, &v) == -1) { // you'll want to check these flags
+  if (clone(tightloop, vstack + STACK_SIZE, CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM, NULL, &v) == -1) { // you'll want to check these flags
     perror("failed to spawn child task");
     return 3;
   }
   //int r=pthread_create(&thr, nullptr, tightloop, nullptr);
   //printf("pthread_create=%d\n",r);
-  sleep(1);
+  sleep(100000);
 
 #endif
   //int pid = atoi(argv[1]);
@@ -1146,7 +1321,10 @@ int main(int argc, char** argv)
   static_tid = 0;
   probe(tid);
   long ret = ptrace (PTRACE_INTERRUPT, tid, NULL, 0);
-      std::cout << "interrupt ret=" << ret << std::endl;
+  std::cout << "interrupt ret=" << ret << std::endl;
+  waitpid(tid, nullptr, 0);
+
+
 
   ret =
   ptrace (PTRACE_DETACH, tid, NULL, 0);

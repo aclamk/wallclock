@@ -1,4 +1,4 @@
-all: ptrace testprog agent
+all: ptrace testprog agent callstep.o
 
 
 wrapper.o: wrapper.asm
@@ -15,6 +15,10 @@ agent: agent.cpp Makefile
 	
 #g++ -c $< -o $@
 
+callstep.o: callstep.cpp
+	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
+
+
 testprog: testprog.cpp largecode.o
 	g++ $^ -o $@ 
 
@@ -24,7 +28,7 @@ testprog: testprog.cpp largecode.o
 ptrace.o: ptrace.cpp
 	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
 	
-ptrace: ptrace.o wrapper.o
+ptrace: ptrace.o wrapper.o callstep.o
 	g++ -o ptrace $^ -lpthread -lunwind
 	
 	

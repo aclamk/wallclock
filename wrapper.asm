@@ -28,6 +28,7 @@ _funkcja:
 
 	.text
 .globl _my_backtrace
+.globl _test_do_print
 
 
 .align 16
@@ -73,6 +74,7 @@ _wrapper:
 	mov 8*16(%rsp), %rsi ;//this is rbp
 	mov %rsp, %rdx
 	add $8*18+128, %rdx       ;//this is rsp
+	mov $111,%rcx
 
 	call my_backtrace
 	//call _wrapper2
@@ -137,6 +139,7 @@ _wrapper_regs_provided:
 	mov 8*(17+3)(%rsp), %rdi
 	mov 8*(17+2)(%rsp), %rsi
 	mov 8*(17+1)(%rsp), %rdx
+	mov $2222, %rcx
 
 	call my_backtrace
 	//call _wrapper2
@@ -166,6 +169,66 @@ _wrapper_regs_provided:
 	jmp *-160(%rsp)
 	//pop %rax
 	ret
+
+
+.align 16
+.globl _wrapper_to_func
+_wrapper_to_func:
+	push %rbp
+	//mov %rsp,%rbp
+	push %rax
+	pushf
+	push %rbx
+	push %rcx
+	push %rdx
+
+	push %rbp
+	push %rsi
+	push %rdi
+
+	push %r8
+	push %r9
+	push %r10
+	push %r11
+
+	push %r12
+	push %r13
+	push %r14
+	push %r15
+	//arg1 - rdi, rip
+	//arg2 - rsi, rbp
+	//arg3 - rdx, rsp
+	//call *%rax
+	mov 8*(17+4)(%rsp), %rax
+	mov 8*(17+3)(%rsp), %rdi
+	mov 8*(17+2)(%rsp), %rsi
+	mov 8*(17+1)(%rsp), %rdx
+
+	call *%rax
+	//call _wrapper2
+	//call _test_do_print
+
+	pop %r15
+	pop %r14
+	pop %r13
+	pop %r12
+
+	pop %r11
+	pop %r10
+	pop %r9
+	pop %r8
+
+	pop %rdi
+	pop %rsi
+	pop %rbp
+
+	pop %rdx
+	pop %rcx
+	pop %rbx
+	popf
+	pop %rax
+	pop %rbp
+	ret $128+(8*4)
 
 	
 
