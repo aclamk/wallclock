@@ -1,12 +1,12 @@
 all: ptrace testprog agent callstep.o
 
 
-wrapper.o: wrapper.asm
+wrapper.o: injected/wrapper.asm
 	as -c $< -o $@
 	
 
-agent: agent.cpp Makefile
-	g++ -Wl,--start-group agent.cpp -fPIE -static -O0 -pie -T script -nostdlib /usr/lib/x86_64-linux-gnu/libc.a /usr/lib/gcc/x86_64-linux-gnu/6/libgcc_eh.a /usr/lib/x86_64-linux-gnu/libunwind.a ~/liblzma/src/liblzma/.libs/liblzma.a  -Wl,--end-group 
+agent: agent.cpp Makefile wrapper.o callstep.o
+	g++ -Wl,--start-group agent.cpp wrapper.o callstep.o -fPIE -static -O0 -pie -T script -nostdlib /usr/lib/x86_64-linux-gnu/libc.a /usr/lib/gcc/x86_64-linux-gnu/6/libstdc++.a /usr/lib/x86_64-linux-gnu/libpthread.a /usr/lib/gcc/x86_64-linux-gnu/6/libgcc_eh.a /usr/lib/x86_64-linux-gnu/libunwind.a ~/liblzma/src/liblzma/.libs/liblzma.a  -Wl,--end-group 
 #-Wl,--unresolved-symbols=ignore-all
 
 #-fno-stack-protector 
@@ -15,7 +15,15 @@ agent: agent.cpp Makefile
 	
 #g++ -c $< -o $@
 
+manager.o: manager.cpp
+	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
+
+
+
 callstep.o: callstep.cpp
+	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
+
+agent.o: agent.cpp
 	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
 
 
@@ -28,7 +36,7 @@ testprog: testprog.cpp largecode.o
 ptrace.o: ptrace.cpp
 	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
 	
-ptrace: ptrace.o wrapper.o callstep.o
+ptrace: ptrace.o wrapper.o callstep.o agent.o manager.o
 	g++ -o ptrace $^ -lpthread -lunwind
 	
 	
