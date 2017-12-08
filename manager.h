@@ -15,6 +15,11 @@
 
 typedef void interruption_func(void);
 
+extern "C"
+void* agent_interface[4];
+
+
+
 class probe_thread
 {
 public:

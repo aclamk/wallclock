@@ -29,7 +29,42 @@
 #include "agent.h"
 static int iiii=1111;
 
+#include "loader.h"
 
+/*
+uint64_t R_init_agent_call = 0;
+uint64_t R_create_sampling_context_call = 0;
+uint64_t R_print_peek_call = 0;
+
+uint64_t _wrapper_call = 0;
+uint64_t _wrapper_regs_provided_call = 0;
+uint64_t _wrapper_to_func_call = 0;
+*/
+
+
+void* locate_library(pid_t pid, const std::string& library_name);
+
+void init_agent_interface(pid_t remote)
+{
+  void* my_agent_so = locate_library(syscall(SYS_gettid), "agent.so");
+  void* remote_agent_so = locate_library(remote, "agent.so");
+
+  printf("my=%p remote=%p\n", my_agent_so, remote_agent_so);
+  int64_t diff = (uint64_t)remote_agent_so - (uint64_t)my_agent_so;
+
+  printf("R_init_agent_call agent_interface=%p\n",&agent_interface);
+  R_init_agent_call = (uint64_t)agent_interface[1] + diff;
+  R_create_sampling_context_call = (uint64_t)agent_interface[2] + diff;
+  R_print_peek_call = (uint64_t)agent_interface[3] + diff;
+
+  _wrapper_call = (uint64_t)agent_interface[4] + diff;
+  _wrapper_regs_provided_call = (uint64_t)agent_interface[5] + diff;
+  _wrapper_to_func_call = (uint64_t)agent_interface[6] + diff;
+
+  printf("R_init_agent_call=%lx\n", R_init_agent_call);
+  printf("R_create_sampling_context_call=%lx\n", R_create_sampling_context_call);
+  printf("R_print_peek_call=%lx\n", R_print_peek_call);
+}
 
 uint64_t now()
 {
@@ -50,7 +85,7 @@ template <int x> struct do_log<8, x>
 
 template<int depth, int x> void do_log<depth,x>::log(void* cct)
 {
-  if (rand() % 2) {
+  if ((depth%2) && (rand() % 2)) {
   //if (rand() % 2) {
     do_log<depth+1, x*2> log;
     log.log(cct);
@@ -194,7 +229,7 @@ bool probe(int target_pid)
     return false;
   if (!pt.read_regs())
       return false;
-  pt.setup_execution_func(pt.regs, (interruption_func*)R_init_agent);
+  pt.setup_execution_func(pt.regs, (interruption_func*)R_init_agent_call);
   pt.cont();
   //uint64_t context;
   //pt.wait_return(&context);
@@ -210,7 +245,7 @@ bool probe(int target_pid)
   if (!pt.read_regs())
     return false;
   printf("R1.3\n");
-  pt.setup_execution_func(pt.regs, (interruption_func*)R_create_sampling_context);
+  pt.setup_execution_func(pt.regs, (interruption_func*)R_create_sampling_context_call);
   uint64_t context;
   pt.wait_return(&context);
   pt.set_remote_context(context);
@@ -220,9 +255,9 @@ bool probe(int target_pid)
   if (! pt.signal_interrupt())
     return false;
 
-  for (int i=0;i<100000;i++)
+  for (int i=0;i<1000;i++)
   {
-    if ((i%100) == 0)
+    if ((i%1) == 0)
     std::cout << "it " << i << std::endl;
     pid_t ppp = waitpid(target_pid, &wstatus, 0);
     if (WSTOPSIG(wstatus) == SIGTRAP)
@@ -237,7 +272,7 @@ bool probe(int target_pid)
     }
     //ret = ptrace(PTRACE_CONT, target_pid, NULL, 0);
     //assert(ret == 0);
-    usleep(1*1000);
+    usleep(10*1000);
     ret = ptrace(PTRACE_INTERRUPT, target_pid, NULL, 0);
     assert(ret == 0);
   }
@@ -254,12 +289,34 @@ bool probe(int target_pid)
     return false;
   std::cout << "finished 1" << std::endl;
   //pt.setup_execution_func(regs, (interruption_func*)do_print, (uint64_t)&root);
-  //pt.cont();
+  pt.cont();
   //std::cout << "finished 2 " << &root << std::endl;
   sleep(1);
   std::cout << "finished 3" << std::endl;
 
+
+  printf("Z1\n");
+  if (! pt.signal_interrupt())
+    return false;
+  printf("Z1.1\n");
+
+  if (!pt.wait_stop(wstatus))
+    return false;
+  printf("Z1.2\n");
+  if (!pt.read_regs())
+    return false;
+  printf("Z1.3\n");
+  pt.setup_execution_func(pt.regs, (interruption_func*)R_print_peek_call, context);
+  //uint64_t context;
+  printf("Z2\n");
+  pt.cont();
+
 }
+
+
+
+
+
 
 
 
@@ -286,31 +343,40 @@ void pppp()
 
 
 #define STACK_SIZE (1024 * 1024)
-
+void* locate_library(pid_t pid, const std::string& library_name);
 
 int main(int argc, char** argv)
 {
 
+  pid_t v;
 
 #if 1
  //_wrapper();
-// my_backtrace(100);
-  pthread_t thr;
-  char *vstack = (char*)malloc(STACK_SIZE);
-  pid_t v;
-  if (clone(tightloop, vstack + STACK_SIZE, CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO /*| CLONE_VM*/, NULL, &v) == -1) { // you'll want to check these flags
-    perror("failed to spawn child task");
-    return 3;
+
+  // my_backtrace(100);
+  if (argc < 2)
+  {
+    pthread_t thr;
+    char *vstack = (char*)malloc(STACK_SIZE);
+    if (clone(tightloop, vstack + STACK_SIZE, CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO /*| CLONE_VM*/, NULL, &v) == -1) { // you'll want to check these flags
+      perror("failed to spawn child task");
+      return 3;
+    }
+    //int r=pthread_create(&thr, nullptr, tightloop, nullptr);
+    //printf("pthread_create=%d\n",r);
+    sleep(1);
   }
-  //int r=pthread_create(&thr, nullptr, tightloop, nullptr);
-  //printf("pthread_create=%d\n",r);
-  sleep(1);
+  else
+  {
+    v = atoi(argv[1]);
+    printf("REMOTE_TID=%d\n",v);
+  }
 
 #endif
 
+  printf("ADD=%lx\n", (uint64_t)locate_library(v,"agent.so"));
 
-
-
+  init_agent_interface(v);
   //int pid = atoi(argv[1]);
 
   //std::cout << "TID=" << tid << std::endl;
@@ -319,6 +385,11 @@ int main(int argc, char** argv)
   std::cout << "TID=" << tid << std::endl;
   static_tid = 0;
   probe(tid);
+
+
+
+
+
   long ret = ptrace (PTRACE_INTERRUPT, tid, NULL, 0);
   std::cout << "interrupt ret=" << ret << std::endl;
   waitpid(tid, nullptr, 0);

@@ -1,12 +1,28 @@
 
-	.text
+	.data
+.globl R_init_agent
+.globl R_create_sampling_context
+.type agent_interface, STT_COMMON
+.globl agent_interface
+	agent_interface:
+	.quad 0 ;//version
+	.quad R_init_agent
+	.quad R_create_sampling_context
+	.quad R_print_peek
+	.quad _wrapper
+	.quad _wrapper_regs_provided
+	.quad _wrapper_to_func
+
+.text
+
 .globl _get_backtrace
 .globl _test_do_print
 
 .align 16
 .globl _wrapper
 _wrapper:
-.stabs "wrapper:F1",36,0,0,_wrapper
+.type _wrapper, STT_FUNC
+.stabs "_wrapper:F1",36,0,0,_wrapper
 	push %rbp
 	push %rax
 	pushf
@@ -38,7 +54,7 @@ _wrapper:
 	mov %rsp, %rdx
 	add $8*18+128, %rdx  ;//this is rsp
 	mov 8*18(%rsp), %rcx ;//this is context
-	call _get_backtrace
+	call _get_backtrace@plt
 
 	pop %r15
 	pop %r14
@@ -67,6 +83,7 @@ _wrapper:
 .globl _wrapper_regs_provided
 _wrapper_regs_provided:
 .stabs "wrapper:F1",36,0,0,_wrapper_regs_provided
+.type _wrapper_regs_provided, STT_FUNC
 
 	push %rbp
 	push %rax
@@ -98,7 +115,7 @@ _wrapper_regs_provided:
 	mov 8*(17+3)(%rsp), %rsi
 	mov 8*(17+2)(%rsp), %rdx
 	mov 8*(17+1)(%rsp), %rcx
-	call _get_backtrace
+	call _get_backtrace@plt
 	//call _wrapper2
 
 	pop %r15
@@ -126,6 +143,7 @@ _wrapper_regs_provided:
 
 .align 16
 .globl _wrapper_to_func
+.type _wrapper_to_func, STT_FUNC
 _wrapper_to_func:
 	push %rbp
 	push %rax

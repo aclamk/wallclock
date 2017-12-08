@@ -178,46 +178,6 @@ public:
 
 
 
-constexpr size_t callstack_items = 100;
-
-std::atomic<bool> my_lock{false};
-
-void grab_callstack(void)
-{
-  if(my_lock.exchange(true) == false)
-  {
-
-    unw_cursor_t cursor;
-    unw_context_t uc;
-    unw_word_t ip, sp;
-
-   // uint64_t start = now();
-
-    unw_getcontext(&uc);
-    unw_init_local(&cursor, &uc);
-    while (unw_step(&cursor) > 0) {
-      unw_get_reg(&cursor, UNW_REG_IP, &ip);
-      unw_get_reg(&cursor, UNW_REG_SP, &sp);
-      char buffer[100];
-      unw_word_t diff;
-      unw_cursor_t cursor2 = {0};
-      unw_set_reg(&cursor2, UNW_REG_IP, ip);
-      //unw_get_proc_name(&cursor, buffer, 100, &diff);
-      //printf ("ip = %lx, sp = %lx %s[%ld]\n", (long) ip, (long) sp, buffer, diff);
-    }
-    //uint64_t end = now();
-    //printf("show_backtrace() took %luus\n",end-start);
-
-
-    local_assert(my_lock.exchange(false) == true);
-  }
-  else
-  {
-    /*ignore if requested too soon*/
-    /*TODO: notify somehow*/
-  }
-}
-
 
 #if 1
 
@@ -227,7 +187,12 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
 
 void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ctx* sc)
 {
+  printf(":\n");
+  if (sc->lock.exchange(true) == true)
+    return;
   //sampling_context* sc;
+  sc->counter++;
+  bool b;
   conveyor* conv = sc->conv;
   //backtrace_counter++;
   unw_cursor_t cursor;
@@ -245,14 +210,17 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
   uint64_t* pos = conv->produce_pos();
   size_t avail = conv->produce_avail();
   if (avail <= 1) {
-    return;
+    goto end;
   }
   *pos = rip;
+  ip = rip;
+  if(*pos == 0) sc->counter--;
   pos = conv->next(pos);
   count++;
   avail--;
+  if(ip == 0) goto ended;
   unw_init_local(&cursor, &uc);
-  bool b=!(rip&0x03f);
+  b=!(rip&0x03f);
   uint64_t rbp_arch;
   uint64_t rsp_arch;
   while (unw_step(&cursor) > 0)
@@ -260,10 +228,10 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
     unw_get_reg(&cursor, UNW_REG_SP, &rsp_arch);
 
     if (avail == 0) {
-      return;
+      goto end;
     }
     unw_get_reg(&cursor, UNW_REG_IP, &ip);
-
+#if 0
     if (ip>0x800000000000L){
       printf("#%ld XXXXX = %lx SP=%lx rsp=%lx rip=%lx rand=%lx\n", count, ip,rsp_arch,rsp,rip, &rand);
       printf("XXXXX rsp=%lx rbp=%lx *sp=%lx *(rbp+8)=%lx\n", rsp, rbp, *(uint64_t*)(rsp), *(uint64_t*)(rbp+8));
@@ -281,28 +249,36 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
         }
       }
     }
-
+#endif
     *pos = ip;
+    if(*pos == 0) sc->counter--;
+
     pos = conv->next(pos);
     count++;
     avail--;
+    if (ip == 0) goto ended;
   }
   if (ip != 0)
   {
     if(avail == 0)
-      return;
+      goto end;
     *pos = 0;
+    if(*pos == 0) sc->counter--;
+
     pos = conv->next(pos);
     count++;
     avail--;
   }
 
+  ended:
   conv->advance(count);
   if (avail < conv->size/2) {
     //make sure reader is notified
     sem_trywait(&conv->notify);
     sem_post(&conv->notify);
   }
+  end:
+  local_assert(sc->lock.exchange(false) == true);
 }
 #endif
 
@@ -332,6 +308,7 @@ void my_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp)
 thread_sampling_ctx::thread_sampling_ctx(size_t size)
 {
   conv = new conveyor(size);
+  root = new callstep(std::string(), 0);
 }
 
 
@@ -344,7 +321,7 @@ thread_sampling_ctx* thread_sampling_ctx::create()
 
 
 
-callstep* root = nullptr;
+//callstep* root = nullptr;
 void thread_sampling_ctx::peek()
 {
   printf("conv_pr= %p\n",&conv);
@@ -356,25 +333,12 @@ void thread_sampling_ctx::peek()
     //notified.
 
     uint64_t* pos = conv->consume_pos();
-
     ssize_t avail = conv->consume_avail();
     ssize_t avail_copy = avail;
-/*
-    unw_cursor_t cursor;
-    unw_context_t uc;
-    unw_getcontext(&uc);
-    uc.uc_mcontext.gregs[REG_RBP] = 0;//rbp;
-    uc.uc_mcontext.gregs[REG_RSP] = 0;//rsp;
-    unw_init_local(&cursor, &uc);
-*/
-    if (root == nullptr)
-    {
-      root = new callstep(std::string(), 0);
-      //static callstep root(std::string(), 0);
-    }
 
     while (avail > 0)
     {
+      pfunc++;
       uint64_t* pos_i = pos;
       size_t count = 0;
       while (*pos_i != 0)
@@ -389,12 +353,13 @@ void thread_sampling_ctx::peek()
       callstep* node = root;
       while (count > 0)
       {
-        node->hit_count++;
+        if(node)node->hit_count++;
         //printf ("# ip = %lx, [%s] base=%lx cnt=%ld\n", (long) *pos_i, node->name.c_str(), node->base_addr, node->hit_count);
-        node = node->find_function(*pos_i);
+        if(node)node = node->find_function(*pos_i);
         pos_i = conv->prev(pos_i);
         count --;
       }
+      if(node)
       node->hit_count++;
       pos = conv->next(pos);
       avail--;
@@ -410,6 +375,11 @@ void thread_sampling_ctx::peek()
 
 
 
+void R_print_peek(thread_sampling_ctx* sc)
+{
+  printf("R_print_peek counter=%ld pfunc=%ld\n",sc->counter.load(), sc->pfunc.load());
+  sc->root->print(0, std::cout);
+}
 
 
 
@@ -425,7 +395,7 @@ int backtrace_reader(void* arg)
     {
       it->peek();
     }
-    usleep(100*1000);
+    usleep(500*1000);
   }
   return 0;
 }

@@ -23,12 +23,14 @@ public:
   uint64_t hit_count{0};
   uint64_t base_addr;
   uint64_t end_addr;
+  uint64_t ip_addr;
   std::string name;
   std::map<uint64_t, callstep*> children;
 
   callstep(std::string name, uint64_t base_addr)
     : name(name), base_addr(base_addr)
   {
+    end_addr=base_addr;
   }
 
   static std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);

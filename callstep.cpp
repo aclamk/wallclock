@@ -42,14 +42,14 @@ std::pair<std::string, int64_t> callstep::get_symbol(uint64_t ip_addr)
       continue;
     }
     if (res == -UNW_ENOINFO)
-      return std::make_pair(std::string("----"),0);
+      return std::make_pair(std::string("----"),-1);
     if (res == -UNW_EUNSPEC)
-      return std::make_pair(std::string("####"),0);
+      return std::make_pair(std::string("####"),-1);
     if (res != 0)
       break;
     return std::make_pair(std::string(buffer), diff);
   } while(true);
-  return std::make_pair(std::string(), 0);
+  return std::make_pair(std::string(), -1);
 }
 
 callstep* callstep::find_function(uint64_t ip_addr)
@@ -60,10 +60,12 @@ callstep* callstep::find_function(uint64_t ip_addr)
     std::string name;
     int64_t diff;
     std::tie(name, diff) = get_symbol(ip_addr);
+    if (diff == -1) return nullptr;
     uint64_t base_addr;
     base_addr = ip_addr - diff;
     callstep* cs = new callstep(name, base_addr);
     children.emplace(base_addr, cs);
+    cs->ip_addr = ip_addr;
     return cs;
   }
 
@@ -75,12 +77,13 @@ callstep* callstep::find_function(uint64_t ip_addr)
     if (ch->second->base_addr <= ip_addr && ip_addr < ch->second->end_addr)
     {
       //hit inside function
-      //printf("hit\n");
       return ch->second;
     }
     std::string name;
     int64_t diff;
     std::tie(name, diff) = get_symbol(ip_addr);
+    if (diff == -1) return nullptr;
+
     uint64_t base_addr;
     base_addr = ip_addr - diff;
     if (base_addr == ch->second->base_addr)
@@ -90,10 +93,12 @@ callstep* callstep::find_function(uint64_t ip_addr)
         ch->second->end_addr = ip_addr;
         printf("extending\n");
       }
+      ch->second->ip_addr = ip_addr;
       return ch->second;
     }
     callstep* cs = new callstep(name, base_addr);
     cs -> end_addr = ip_addr;
+    cs -> ip_addr = ip_addr;
     children.emplace(base_addr, cs);
     printf("adding\n");
     return cs;
@@ -102,11 +107,12 @@ callstep* callstep::find_function(uint64_t ip_addr)
   std::string name;
   int64_t diff;
   std::tie(name, diff) = get_symbol(ip_addr);
+  if (diff==-1) return nullptr;
   uint64_t base_addr;
   base_addr = ip_addr - diff;
   callstep* cs = new callstep(name, base_addr);
   cs -> end_addr = ip_addr;
-  printf("extending\n");
+  printf("new\n");
   children.emplace(base_addr, cs);
   return cs;
 
@@ -153,7 +159,7 @@ void callstep::print(uint32_t depth, std::ostream& out)
   //out << "hit = " << hit_count << ",\n";
 
   out << std::string(depth*2, ' ');
-  out << std::hex << base_addr << std::dec << " " << name << " " << hit_count << "\n";
+  out << std::hex << base_addr << std::dec << " " << name << " " << hit_count << " ip=" << std::hex << ip_addr-base_addr << std::dec << "\n";
 
 //  out << std::string(depth*2, ' ');
 //  out << "addr = 0x" << std::hex << base_addr << std::dec << ",\n";

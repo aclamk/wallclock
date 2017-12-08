@@ -1,4 +1,4 @@
-all: ptrace testprog agent callstep.o
+all: ptrace testprog agent callstep.o loader.o agent.so
 
 
 wrapper.o: injected/wrapper.asm
@@ -7,6 +7,12 @@ wrapper.o: injected/wrapper.asm
 
 agent: agent.cpp Makefile wrapper.o callstep.o
 	g++ -Wl,--start-group agent.cpp wrapper.o callstep.o -fPIE -static -O0 -pie -T script -nostdlib /usr/lib/x86_64-linux-gnu/libc.a /usr/lib/gcc/x86_64-linux-gnu/6/libstdc++.a /usr/lib/x86_64-linux-gnu/libpthread.a /usr/lib/gcc/x86_64-linux-gnu/6/libgcc_eh.a /usr/lib/x86_64-linux-gnu/libunwind.a ~/liblzma/src/liblzma/.libs/liblzma.a  -Wl,--end-group 
+
+agent.so: agent.o wrapper.o callstep.o
+	g++ -shared -Wl,-export-dynamic -Wl,-soname,agent.so \
+    -o agent.so agent.o wrapper.o callstep.o /usr/lib/x86_64-linux-gnu/libunwind.a ~/liblzma/src/liblzma/.libs/liblzma.so -pthread #~/liblzma/src/liblzma/.libs/liblzma.a
+    #-nostdlib /usr/lib/x86_64-linux-gnu/libc.a /usr/lib/gcc/x86_64-linux-gnu/6/libstdc++.a /usr/lib/x86_64-linux-gnu/libpthread.a /usr/lib/gcc/x86_64-linux-gnu/6/libgcc_eh.a /usr/lib/x86_64-linux-gnu/libunwind.a ~/liblzma/src/liblzma/.libs/liblzma.a
+    
 #-Wl,--unresolved-symbols=ignore-all
 
 #-fno-stack-protector 
@@ -18,12 +24,17 @@ agent: agent.cpp Makefile wrapper.o callstep.o
 manager.o: manager.cpp
 	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
 
+loader.o: loader.cpp
+	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
 
 
 callstep.o: callstep.cpp
-	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
+	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g -fPIC
 
 agent.o: agent.cpp
+	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g -fPIC
+
+largecode.o: largecode.cpp
 	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
 
 
@@ -34,10 +45,11 @@ testprog: testprog.cpp largecode.o
 #	g++ tightloop.cpp -o tightloop
 
 ptrace.o: ptrace.cpp
-	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
+	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g -fPIC
 	
-ptrace: ptrace.o wrapper.o callstep.o agent.o manager.o
-	g++ -o ptrace $^ -lpthread -lunwind
+#wrapper.o 	
+ptrace: ptrace.o callstep.o agent.so manager.o loader.o 
+	g++ -o ptrace $^ -lpthread -lunwind 
 	
 	
 #g++ agent.cpp -fPIE -static -fno-stack-protector -O0 -pie -nostdlib -T script

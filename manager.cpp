@@ -10,6 +10,9 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <stdio.h>
+
+#include "loader.h"
+#if 0
 extern "C"
 void _wrapper(void);
 
@@ -18,7 +21,7 @@ void _wrapper_regs_provided(void);
 
 extern "C"
 void _wrapper_to_func(void);
-
+#endif
 
 
 
@@ -33,7 +36,7 @@ int probe_thread::setup_execution_frame(user_regs_struct& regs)
   regs.rsp -= 8;
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
-  regs.rip = (uint64_t)_wrapper;
+  regs.rip = (uint64_t)_wrapper_call;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
   return ret;
@@ -58,7 +61,7 @@ int probe_thread::setup_execution_frame(user_regs_struct& regs,
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
 
-  regs.rip = (uint64_t)_wrapper_regs_provided;
+  regs.rip = (uint64_t)_wrapper_regs_provided_call;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
   return ret;
@@ -84,7 +87,7 @@ int probe_thread::setup_execution_func(user_regs_struct& regs,
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
 
-  regs.rip = (uint64_t)_wrapper_to_func;
+  regs.rip = (uint64_t)_wrapper_to_func_call;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
   return ret;
@@ -241,8 +244,8 @@ bool probe_thread::grab_callback()
   else
   {
     ret = 0;
-    if (regs.rip != (uint64_t)_wrapper &&
-        regs.rip != (uint64_t)_wrapper_regs_provided)
+    if (regs.rip != (uint64_t)_wrapper_call &&
+        regs.rip != (uint64_t)_wrapper_regs_provided_call)
     {
       ret = setup_execution_frame(regs);
     }
