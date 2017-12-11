@@ -1,28 +1,27 @@
 
-	.data
-.globl R_init_agent
-.globl R_create_sampling_context
+.data
+//.globl R_init_agent
+//.globl R_create_sampling_context
+
 .type agent_interface, STT_COMMON
 .globl agent_interface
-	agent_interface:
-	.quad 0 ;//version
+agent_interface:
+	.ascii "AGENTAPI" ;//sanity-check marker
+	.quad _wc_inject
+	.quad _wc_inject_backtrace
+	.quad _wc_inject_backtrace_delayed
 	.quad R_init_agent
 	.quad R_create_sampling_context
 	.quad R_print_peek
-	.quad _wrapper
-	.quad _wrapper_regs_provided
-	.quad _wrapper_to_func
 
 .text
 
-.globl _get_backtrace
-.globl _test_do_print
+.protected _get_backtrace
 
 .align 16
-.globl _wrapper
-_wrapper:
-.type _wrapper, STT_FUNC
-.stabs "_wrapper:F1",36,0,0,_wrapper
+.globl _wc_inject_backtrace
+.type _wc_inject_backtrace, STT_FUNC
+_wc_inject_backtrace:
 	push %rbp
 	push %rax
 	pushf
@@ -54,7 +53,7 @@ _wrapper:
 	mov %rsp, %rdx
 	add $8*18+128, %rdx  ;//this is rsp
 	mov 8*18(%rsp), %rcx ;//this is context
-	call _get_backtrace@plt
+	call _get_backtrace
 
 	pop %r15
 	pop %r14
@@ -80,11 +79,9 @@ _wrapper:
 
 
 .align 16
-.globl _wrapper_regs_provided
-_wrapper_regs_provided:
-.stabs "wrapper:F1",36,0,0,_wrapper_regs_provided
-.type _wrapper_regs_provided, STT_FUNC
-
+.globl _wc_inject_backtrace_delayed
+.type _wc_inject_backtrace_delayed, STT_FUNC
+_wc_inject_backtrace_delayed:
 	push %rbp
 	push %rax
 	pushf
@@ -110,13 +107,11 @@ _wrapper_regs_provided:
 	//arg3 - rdx, rsp
 	//arg4 - rcx, context*
 
-	//call *%rax
 	mov 8*(17+4)(%rsp), %rdi
 	mov 8*(17+3)(%rsp), %rsi
 	mov 8*(17+2)(%rsp), %rdx
 	mov 8*(17+1)(%rsp), %rcx
-	call _get_backtrace@plt
-	//call _wrapper2
+	call _get_backtrace
 
 	pop %r15
 	pop %r14
@@ -142,9 +137,9 @@ _wrapper_regs_provided:
 
 
 .align 16
-.globl _wrapper_to_func
-.type _wrapper_to_func, STT_FUNC
-_wrapper_to_func:
+.globl _wc_inject
+.type _wc_inject, STT_FUNC
+_wc_inject:
 	push %rbp
 	push %rax
 	pushf

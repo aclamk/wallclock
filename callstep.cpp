@@ -54,13 +54,12 @@ std::pair<std::string, int64_t> callstep::get_symbol(uint64_t ip_addr)
 
 callstep* callstep::find_function(uint64_t ip_addr)
 {
-#if 1
   if (children.size() == 0)
   {
     std::string name;
     int64_t diff;
     std::tie(name, diff) = get_symbol(ip_addr);
-    if (diff == -1) return nullptr;
+    //if (diff == -1) return nullptr;
     uint64_t base_addr;
     base_addr = ip_addr - diff;
     callstep* cs = new callstep(name, base_addr);
@@ -82,7 +81,7 @@ callstep* callstep::find_function(uint64_t ip_addr)
     std::string name;
     int64_t diff;
     std::tie(name, diff) = get_symbol(ip_addr);
-    if (diff == -1) return nullptr;
+    //if (diff == -1) return nullptr;
 
     uint64_t base_addr;
     base_addr = ip_addr - diff;
@@ -91,7 +90,6 @@ callstep* callstep::find_function(uint64_t ip_addr)
       if (ch->second->end_addr < ip_addr)
       {
         ch->second->end_addr = ip_addr;
-        printf("extending\n");
       }
       ch->second->ip_addr = ip_addr;
       return ch->second;
@@ -100,56 +98,18 @@ callstep* callstep::find_function(uint64_t ip_addr)
     cs -> end_addr = ip_addr;
     cs -> ip_addr = ip_addr;
     children.emplace(base_addr, cs);
-    printf("adding\n");
     return cs;
   }
-
   std::string name;
   int64_t diff;
   std::tie(name, diff) = get_symbol(ip_addr);
-  if (diff==-1) return nullptr;
+  //if (diff==-1) return nullptr;
   uint64_t base_addr;
   base_addr = ip_addr - diff;
   callstep* cs = new callstep(name, base_addr);
   cs -> end_addr = ip_addr;
-  printf("new\n");
   children.emplace(base_addr, cs);
   return cs;
-
-#endif
-#if 0
-  auto ch = children.find(ip_addr);
-  if (ch != children.end())
-  {
-    return ch->second;
-  }
-  else
-  {
-    std::string name;
-    int64_t diff;
-    std::tie(name, diff) = get_symbol(ip_addr);
-    uint64_t base_addr;
-    if (diff>=0) base_addr= ip_addr - diff;
-    else
-      base_addr = -diff;
-
-    auto it = children.lower_bound(base_addr);
-    if ((it != children.end()) && (it->second->base_addr == base_addr))
-    {
-      //this is call to same function from other place
-      children.emplace(ip_addr, it->second);
-      return it->second;
-    }
-    else
-    {
-      //function that was never visited
-      //printf("%lx name=%s\n",base_addr, name.c_str());
-      callstep* cs = new callstep(name, base_addr);
-      children.emplace(ip_addr, cs);
-      return cs;
-    }
-  }
-#endif
 }
 
 void callstep::print(uint32_t depth, std::ostream& out)

@@ -12,11 +12,11 @@
 #include <sys/user.h>
 #include <sys/types.h>
 #include <inttypes.h>
-
+#include "loader.h"
 typedef void interruption_func(void);
 
-extern "C"
-void* agent_interface[4];
+//extern "C"
+//void* agent_interface[4];
 
 
 
@@ -52,9 +52,24 @@ public:
   bool syscall();
   bool read_regs();
   bool wait_return(uint64_t* arg1=nullptr, uint64_t* arg2=nullptr, uint64_t* arg3=nullptr);
-  bool wait_stop(int& wstatus);
+  bool wait_stop(int& wstatus, user_regs_struct& regs);
   bool grab_callback();
   void set_remote_context(uint64_t remote_context);
+
+  bool pause(user_regs_struct& regs);
+
+  bool execute_remote(interruption_func* func,
+                      uint64_t* res1, uint64_t* res2, uint64_t* res3,
+                      uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
+  bool execute_remote(interruption_func* func,
+                      uint64_t* res1, uint64_t* res2,
+                      uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
+  bool execute_remote(interruption_func* func,
+                      uint64_t* res1,
+                      uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
+  bool execute_remote(interruption_func* func,
+                      uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
+
 };
 
 #endif /* MANAGER_H_ */

@@ -8,15 +8,14 @@
 #include <sys/types.h>
 #include <sstream>
 #include <iostream>
+#include <syscall.h>
+#include <unistd.h>
+#include "loader.h"
+#include <string.h>
+#include <assert.h>
 
-
-uint64_t R_init_agent_call = 0;
-uint64_t R_create_sampling_context_call = 0;
-uint64_t R_print_peek_call = 0;
-
-uint64_t _wrapper_call = 0;
-uint64_t _wrapper_regs_provided_call = 0;
-uint64_t _wrapper_to_func_call = 0;
+extern RemoteAPI agent_interface;
+RemoteAPI agent_interface_remote;
 
 
 void* locate_library(pid_t pid, const std::string& library_name)
@@ -60,3 +59,30 @@ void* locate_library(pid_t pid, const std::string& library_name)
   }
   return nullptr;
 }
+
+extern RemoteAPI agent_interface;
+
+void init_agent_interface(pid_t remote)
+{
+  void* my_agent_so = locate_library(syscall(SYS_gettid), "agent.so");
+  void* remote_agent_so = locate_library(remote, "agent.so");
+  assert(my_agent_so != nullptr);
+  if (remote_agent_so == nullptr) {
+    std::cout << "remote does not have agent.so library" << std::endl;
+    exit(-1);
+  }
+  assert(memcmp(agent_interface.sanity_marker,"AGENTAPI",8) == 0);
+
+  int64_t diff = (uint64_t)remote_agent_so - (uint64_t)my_agent_so;
+
+  agent_interface_remote = agent_interface;
+  agent_interface_remote._wc_inject += diff;
+  agent_interface_remote._wc_inject_backtrace += diff;
+  agent_interface_remote._wc_inject_backtrace_delayed += diff;
+  agent_interface_remote.R_init_agent += diff;
+  agent_interface_remote.R_create_sampling_context += diff;
+  agent_interface_remote.R_print_peek += diff;
+}
+
+
+

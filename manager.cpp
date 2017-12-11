@@ -12,16 +12,6 @@
 #include <stdio.h>
 
 #include "loader.h"
-#if 0
-extern "C"
-void _wrapper(void);
-
-extern "C"
-void _wrapper_regs_provided(void);
-
-extern "C"
-void _wrapper_to_func(void);
-#endif
 
 
 
@@ -32,11 +22,12 @@ int probe_thread::setup_execution_frame(user_regs_struct& regs)
   //x86_64-abi section 3.2.2 The Stack Frame, declares sp+0 .. sp+128 as reserved
   int ret;
   regs.rsp -= (128 + 8);
+  printf("context1=%p\n",remote_context);
   ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)remote_context);
   regs.rsp -= 8;
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
-  regs.rip = (uint64_t)_wrapper_call;
+  regs.rip = agent_interface_remote._wc_inject_backtrace;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
   return ret;
@@ -55,13 +46,14 @@ int probe_thread::setup_execution_frame(user_regs_struct& regs,
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)previous_regs.rsp);
   regs.rsp -= 8;
+  printf("context2=%p\n",remote_context);
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)remote_context);
   regs.rsp -= 8;
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
 
-  regs.rip = (uint64_t)_wrapper_regs_provided_call;
+  regs.rip = agent_interface_remote._wc_inject_backtrace_delayed;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
   return ret;
@@ -87,9 +79,10 @@ int probe_thread::setup_execution_func(user_regs_struct& regs,
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
 
-  regs.rip = (uint64_t)_wrapper_to_func_call;
+  regs.rip = agent_interface_remote._wc_inject;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
+  printf("ret=%d\n",ret);
   return ret;
 }
 
@@ -156,15 +149,19 @@ bool probe_thread::wait_return(uint64_t* arg1, uint64_t* arg2, uint64_t* arg3)
 {
   bool result = false;
   int ret;
+  user_regs_struct regs;
   do
   {
+    printf("wr1\n");
     if (!syscall()) {
       break;
     }
+    printf("wr2\n");
     int wstatus;
-    if (!wait_stop(wstatus)) {
+    if (!wait_stop(wstatus, regs)) {
       break;
     }
+    printf("wr3\n");
 
     if (WIFSTOPPED(wstatus) && ((WSTOPSIG(wstatus) & ~0x80) == (SIGTRAP | 0x00)))
     {
@@ -186,32 +183,41 @@ bool probe_thread::wait_return(uint64_t* arg1, uint64_t* arg2, uint64_t* arg3)
     }
   }
   while (true);
+  printf("wr4\n");
   if(result)
     result = cont();
   return result;
 }
 
-bool probe_thread::wait_stop(int& wstatus)
+bool probe_thread::wait_stop(int& wstatus, user_regs_struct& regs)
 {
   long ret;
+  printf("a\n");
   pid_t ppp = waitpid(m_target, &wstatus, 0);
+  if (ppp != m_target)
+    return false;
+  printf("b\n");
   ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
   if (ret != 0)
     return false;
+  printf("c\n");
   errno = 0;
   uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip-2), nullptr);
   if (errno != 0)
     return false;
   if ((code & 0xffff) == 0x050f)   //0x0f05 is SYSCALL
-      {
+  {
     ret = ptrace(PTRACE_SINGLESTEP, m_target, nullptr, nullptr);
     if (ret != 0)
       return false;
+    printf("d\n");
     waitpid(m_target, &wstatus, 0);
     ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
+    printf("e\n");
+
     if (ret != 0)
       return false;
-      }
+  }
   return true;
 }
 
@@ -244,8 +250,8 @@ bool probe_thread::grab_callback()
   else
   {
     ret = 0;
-    if (regs.rip != (uint64_t)_wrapper_call &&
-        regs.rip != (uint64_t)_wrapper_regs_provided_call)
+    if (regs.rip != agent_interface_remote._wc_inject_backtrace &&
+        regs.rip != agent_interface_remote._wc_inject_backtrace_delayed)
     {
       ret = setup_execution_frame(regs);
     }
@@ -263,5 +269,64 @@ bool probe_thread::grab_callback()
 void probe_thread::set_remote_context(uint64_t remote_context)
 {
   this->remote_context = remote_context;
+}
+
+bool probe_thread::pause(user_regs_struct& regs)
+{
+  if (!signal_interrupt())
+    return false;
+  int wstatus;
+  if (!wait_stop(wstatus, regs))
+    return false;
+  return true;
+}
+
+
+
+bool probe_thread::execute_remote(interruption_func* func,
+                                  uint64_t* res1, uint64_t* res2, uint64_t* res3,
+                                  uint64_t arg1, uint64_t arg2, uint64_t arg3)
+{
+  user_regs_struct regs;
+  if (!pause(regs))
+    return false;
+  printf("ER1\n");
+  if (0 != setup_execution_func(regs, func, arg1, arg2, arg3))
+    return false;
+  printf("ER2\n");
+
+  if (!wait_return(res1, res2, res3))
+    return false;
+  printf("ER3\n");
+  return true;
+}
+
+bool probe_thread::execute_remote(interruption_func* func,
+                                  uint64_t* res1, uint64_t* res2,
+                                  uint64_t arg1, uint64_t arg2, uint64_t arg3)
+{
+  uint64_t res3;
+  return execute_remote(func, res1, res2, &res3, arg1, arg2, arg3);
+}
+
+bool probe_thread::execute_remote(interruption_func* func,
+                                  uint64_t* res1,
+                                  uint64_t arg1, uint64_t arg2, uint64_t arg3)
+{
+  uint64_t res2;
+  uint64_t res3;
+  bool res =
+   execute_remote(func, res1, &res2, &res3, arg1, arg2, arg3);
+  printf("res=%d\n",res);
+  return res;
+}
+
+bool probe_thread::execute_remote(interruption_func* func,
+                                  uint64_t arg1, uint64_t arg2, uint64_t arg3)
+{
+  uint64_t res1;
+  uint64_t res2;
+  uint64_t res3;
+  return execute_remote(func, &res1, &res2, &res3, arg1, arg2, arg3);
 }
 

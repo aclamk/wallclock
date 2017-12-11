@@ -10,16 +10,20 @@
 
 #include <inttypes.h>
 
-extern uint64_t R_init_agent_call;
-extern uint64_t R_create_sampling_context_call;
-extern uint64_t R_print_peek_call;
+typedef uint64_t vm_addr_t;
 
-extern uint64_t _wrapper_call;
-extern uint64_t _wrapper_regs_provided_call;
-extern uint64_t _wrapper_to_func_call;
+struct RemoteAPI
+{
+  char sanity_marker[8];
+  vm_addr_t _wc_inject;
+  vm_addr_t _wc_inject_backtrace;
+  vm_addr_t _wc_inject_backtrace_delayed;
+  vm_addr_t R_init_agent;
+  vm_addr_t R_create_sampling_context;
+  vm_addr_t R_print_peek;
+};
 
-
-
-
+extern RemoteAPI agent_interface_remote;
+void init_agent_interface(pid_t remote);
 
 #endif /* LOADER_H_ */

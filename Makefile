@@ -1,6 +1,18 @@
 all: ptrace testprog agent callstep.o loader.o agent.so
 
 
+OBJS = \
+	wrapper.o \
+	manager.o \
+	loader.o \
+	callstep.o \
+	agent.o \
+	largecode.o \
+	ptrace.o \
+	agent.so
+
+clean:
+	rm -f $(OBJS)
 wrapper.o: injected/wrapper.asm
 	as -c $< -o $@
 	
@@ -25,7 +37,7 @@ manager.o: manager.cpp
 	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
 
 loader.o: loader.cpp
-	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g
+	g++ -c $< -o $@ -fno-omit-frame-pointer -O0 -g -fPIC
 
 
 callstep.o: callstep.cpp

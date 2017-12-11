@@ -42,7 +42,7 @@ public:
 
 
 //bool init_sampling_context_key();
-
+#if 0
 extern "C"
 void R_create_sampling_context();
 
@@ -51,6 +51,6 @@ void R_init_agent();
 
 extern "C"
 void R_print_peek(thread_sampling_ctx* sc);
-
+#endif
 
 #endif /* AGENT_H_ */
