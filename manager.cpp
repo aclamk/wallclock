@@ -6,15 +6,21 @@
  */
 
 #include "manager.h"
-
 #include <sys/wait.h>
 #include <errno.h>
 #include <stdio.h>
 
 #include "loader.h"
 
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
-
+#include <string>
+#include "agent.h"
 
 int probe_thread::setup_execution_frame(user_regs_struct& regs)
 {
@@ -22,7 +28,6 @@ int probe_thread::setup_execution_frame(user_regs_struct& regs)
   //x86_64-abi section 3.2.2 The Stack Frame, declares sp+0 .. sp+128 as reserved
   int ret;
   regs.rsp -= (128 + 8);
-  printf("context1=%p\n",remote_context);
   ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)remote_context);
   regs.rsp -= 8;
   if (ret == 0)
@@ -46,7 +51,6 @@ int probe_thread::setup_execution_frame(user_regs_struct& regs,
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)previous_regs.rsp);
   regs.rsp -= 8;
-  printf("context2=%p\n",remote_context);
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)remote_context);
   regs.rsp -= 8;
@@ -329,4 +333,116 @@ bool probe_thread::execute_remote(interruption_func* func,
   uint64_t res3;
   return execute_remote(func, &res1, &res2, &res3, arg1, arg2, arg3);
 }
+
+
+bool connect_client(uint64_t socket_hash)
+{
+
+
+
+  return false;
+}
+
+
+int manager::connect_agent(uint64_t some_id)
+{
+  int conn_fd;
+  struct sockaddr_un conn_addr;
+
+  std::string unix_name{"@/wallclock/"};
+  char hex[8*2+1];
+  sprintf(hex, "%16.16lx", some_id);
+  unix_name.append(hex);
+  conn_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (conn_fd != -1)
+  {
+    memset(&conn_addr, 0, sizeof(struct sockaddr_un));
+    conn_addr.sun_family = AF_UNIX;
+    strncpy(conn_addr.sun_path, unix_name.c_str(), sizeof(conn_addr.sun_path) - 1);
+    conn_addr.sun_path[0] = '\0';
+    if (connect(conn_fd, (struct sockaddr *) &conn_addr, sizeof(struct sockaddr_un)) == 0)
+    {
+      this->conn_fd = conn_fd;
+      return conn_fd;
+    }
+    else
+      close(conn_fd);
+  }
+  return -1;
+}
+
+bool manager::read_bytes(void* ptr, size_t size)
+{
+  int res;
+  res = read(conn_fd, ptr, size);
+  return res == size;
+}
+
+bool manager::write_bytes(const void* ptr, size_t size)
+{
+  int res;
+  res = write(conn_fd, ptr, size);
+  return res == size;
+}
+//bool trace_thread_new(pid_t pid, uint64_t& sc);
+
+bool manager::trace_thread_new(uint64_t& sc)
+{
+  uint8_t cmd = agent::CMD_TRACE_THREAD_NEW;
+  bool res = false;
+  uint64_t sc_tmp;
+  if (write_bytes(&cmd, sizeof(uint8_t))) {
+    if (read_bytes(&sc_tmp, sizeof(uint64_t)))
+    {
+      sc = sc_tmp;
+      res = true;
+    }
+  }
+  return res;
+}
+
+
+
+#if 0
+int
+       main(int argc, char *argv[])
+       {
+           int sfd, cfd;
+           struct sockaddr_un my_addr, peer_addr;
+           socklen_t peer_addr_size;
+
+           sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+           if (sfd == -1)
+               handle_error("socket");
+
+           memset(&my_addr, 0, sizeof(struct sockaddr_un));
+                               /* Clear structure */
+           my_addr.sun_family = AF_UNIX;
+           strncpy(my_addr.sun_path, MY_SOCK_PATH,
+                   sizeof(my_addr.sun_path) - 1);
+
+           if (bind(sfd, (struct sockaddr *) &my_addr,
+                   sizeof(struct sockaddr_un)) == -1)
+               handle_error("bind");
+
+           if (listen(sfd, LISTEN_BACKLOG) == -1)
+               handle_error("listen");
+
+           /* Now we can accept incoming connections one
+              at a time using accept(2) */
+
+           peer_addr_size = sizeof(struct sockaddr_un);
+           cfd = accept(sfd, (struct sockaddr *) &peer_addr,
+                        &peer_addr_size);
+           if (cfd == -1)
+               handle_error("accept");
+
+           /* Code to deal with incoming connection(s)... */
+
+           /* When no longer required, the socket pathname, MY_SOCK_PATH
+              should be deleted using unlink(2) or remove(3) */
+       }
+
+
+#endif
 

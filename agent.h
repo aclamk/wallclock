@@ -9,6 +9,8 @@
 #define AGENT_H_
 
 #include <vector>
+#include <atomic>
+#include <semaphore.h>
 struct conveyor;
 struct callstep;
 
@@ -38,19 +40,28 @@ public:
 //private:
   std::vector<thread_sampling_ctx*> threads;
   sem_t wake_up;
+  enum {
+    CMD_TRACE_THREAD_NEW=1,
+    CMD_TRACE_THREAD_END=2,
+    CMD_TERMINATE=3
+  };
+
+  static int worker(void*);
+private:
+  int wait_read();
+  bool read_bytes(void* ptr, size_t size);
+  bool write_bytes(const void* ptr, size_t size);
+
+  int conn_fd;
+  bool worker();
+
+  int read_command();
+
+  bool trace_thread_new();
+
+  friend int backtrace_reader(void* arg);
 };
 
 
-//bool init_sampling_context_key();
-#if 0
-extern "C"
-void R_create_sampling_context();
-
-extern "C"
-void R_init_agent();
-
-extern "C"
-void R_print_peek(thread_sampling_ctx* sc);
-#endif
 
 #endif /* AGENT_H_ */

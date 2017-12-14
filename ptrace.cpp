@@ -106,24 +106,35 @@ extern "C"
 void _remote_return(uint64_t a, uint64_t b, uint64_t c);
 
 
+
+
+
+
+
 bool probe(int target_pid)
 {
   long ret;
-
   probe_thread pt;
-
+  int conn_fd;
   if (! pt.seize(target_pid))
     return false;
   sleep(1);
   user_regs_struct regs;
   int wstatus;
 
-  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_init_agent))
+  uint64_t unix_id;
+  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_init_agent, &unix_id))
     return false;
+  usleep(100*1000);
+  manager mgr;
+  conn_fd = mgr.connect_agent(unix_id);
+  printf("conn_fd=%d\n",conn_fd);
   sleep(1);
   uint64_t context;
-  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_create_sampling_context, &context))
+  if (!mgr.trace_thread_new(context))
     return false;
+//  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_create_sampling_context, &context))
+//    return false;
   printf("probe 1 context=%lx\n",context);
   pt.set_remote_context(context);
   sleep(1);

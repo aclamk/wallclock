@@ -70,6 +70,25 @@ public:
   bool execute_remote(interruption_func* func,
                       uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
 
+
 };
+
+class manager
+{
+private:
+  int conn_fd;
+public:
+  int connect_agent(uint64_t some_id);
+  bool read_bytes(void* ptr, size_t size);
+  bool write_bytes(const void* ptr, size_t size);
+
+  bool trace_thread_new(uint64_t& sc);
+
+};
+
+int connect_agent(uint64_t some_id);
+
+void execute_command();
+
 
 #endif /* MANAGER_H_ */

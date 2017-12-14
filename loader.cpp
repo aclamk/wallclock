@@ -51,7 +51,6 @@ void* locate_library(pid_t pid, const std::string& library_name)
         is.get();
       if (!std::getline(is, pathname)) continue;
     }
-    std::cout << addr_begin << addr_end << perms << offset << dev << inode << "<>" << pathname << std::endl;
     if (pathname.find(library_name)!=pathname.npos && perms == "r-xp")
     {
       return (void*)strtoll(addr_begin.c_str(), nullptr, 16);
