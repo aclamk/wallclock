@@ -17,6 +17,8 @@
 #include <unistd.h>
 
 
+class UnixIO;
+
 class callstep
 {
 public:
@@ -37,6 +39,7 @@ public:
 
   callstep* find_function(uint64_t ip_addr);
   void print(uint32_t depth, std::ostream& out);
+  bool dump_tree(uint32_t depth, UnixIO& io);
 };
 
 

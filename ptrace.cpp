@@ -125,9 +125,9 @@ bool probe(int target_pid)
   uint64_t unix_id;
   if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_init_agent, &unix_id))
     return false;
-  usleep(100*1000);
-  manager mgr;
-  conn_fd = mgr.connect_agent(unix_id);
+  usleep(500*1000);
+  Manager mgr;
+  conn_fd = mgr.io.connect(unix_id);
   printf("conn_fd=%d\n",conn_fd);
   sleep(1);
   uint64_t context;
@@ -146,7 +146,7 @@ bool probe(int target_pid)
 
   for (int i=0;i<1000;i++)
   {
-    if ((i%1) == 0)
+    if ((i%100) == 0)
     std::cout << "it " << i << std::endl;
     pid_t ppp = waitpid(target_pid, &wstatus, 0);
     if (WSTOPSIG(wstatus) == SIGTRAP)
@@ -167,10 +167,12 @@ bool probe(int target_pid)
   }
 
 
-  waitpid(target_pid, nullptr, 0);
-  pt.cont();
-  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_print_peek, context))
-      return false;
+  mgr.dump_tree(context);
+
+//  waitpid(target_pid, nullptr, 0);
+//  pt.cont();
+//  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_print_peek, &context))
+//      return false;
 }
 
 

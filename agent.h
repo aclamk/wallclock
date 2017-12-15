@@ -11,12 +11,15 @@
 #include <vector>
 #include <atomic>
 #include <semaphore.h>
+
+#include "unix_io.h"
 struct conveyor;
 struct callstep;
+class Agent;
 
 class thread_sampling_ctx
 {
-  thread_sampling_ctx(size_t depth);
+  thread_sampling_ctx(size_t size);
 
 public:
   conveyor* conv{nullptr};
@@ -27,14 +30,15 @@ public:
   /*creates sampling context for calling thread*/
   static thread_sampling_ctx* create();
   void peek();
+  void dump_tree(UnixIO& io);
 };
 
 
-class agent
+class Agent
 {
-  agent();
+  Agent();
 public:
-  static agent* create();
+  static Agent* create();
   void add_thread(thread_sampling_ctx* sc);
 
 //private:
@@ -43,14 +47,13 @@ public:
   enum {
     CMD_TRACE_THREAD_NEW=1,
     CMD_TRACE_THREAD_END=2,
-    CMD_TERMINATE=3
+    CMD_TERMINATE=3,
+    CMD_DUMP_TREE=4
   };
 
   static int worker(void*);
+  UnixIO io;
 private:
-  int wait_read();
-  bool read_bytes(void* ptr, size_t size);
-  bool write_bytes(const void* ptr, size_t size);
 
   int conn_fd;
   bool worker();
@@ -58,7 +61,8 @@ private:
   int read_command();
 
   bool trace_thread_new();
-
+  bool dump_tree(thread_sampling_ctx* tsx);
+  bool dump_tree();
   friend int backtrace_reader(void* arg);
 };
 

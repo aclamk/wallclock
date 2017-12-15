@@ -6,6 +6,7 @@
  */
 
 #include "manager.h"
+
 #include <sys/wait.h>
 #include <errno.h>
 #include <stdio.h>
@@ -18,11 +19,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-
+#include <iostream>
 #include <string>
+
 #include "agent.h"
 
-int probe_thread::setup_execution_frame(user_regs_struct& regs)
+int probe_thread::inject_backtrace(user_regs_struct& regs)
 {
   //make frame big enough to skip "scratch area"
   //x86_64-abi section 3.2.2 The Stack Frame, declares sp+0 .. sp+128 as reserved
@@ -38,7 +40,7 @@ int probe_thread::setup_execution_frame(user_regs_struct& regs)
   return ret;
 }
 
-int probe_thread::setup_execution_frame(user_regs_struct& regs,
+int probe_thread::inject_backtrace(user_regs_struct& regs,
                                         const user_regs_struct& previous_regs)
 {
   int ret;
@@ -63,7 +65,7 @@ int probe_thread::setup_execution_frame(user_regs_struct& regs,
   return ret;
 }
 
-int probe_thread::setup_execution_func(user_regs_struct& regs,
+int probe_thread::inject_func(user_regs_struct& regs,
                                        interruption_func func,
                                        uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
@@ -247,7 +249,7 @@ bool probe_thread::grab_callback()
       ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs_as);
       if (ret == 0)
       {
-        ret = setup_execution_frame(regs_as, regs);
+        ret = inject_backtrace(regs_as, regs);
       }
     }
   }
@@ -257,7 +259,7 @@ bool probe_thread::grab_callback()
     if (regs.rip != agent_interface_remote._wc_inject_backtrace &&
         regs.rip != agent_interface_remote._wc_inject_backtrace_delayed)
     {
-      ret = setup_execution_frame(regs);
+      ret = inject_backtrace(regs);
     }
   }
   if (ret == 0)
@@ -287,52 +289,20 @@ bool probe_thread::pause(user_regs_struct& regs)
 
 
 
+
 bool probe_thread::execute_remote(interruption_func* func,
-                                  uint64_t* res1, uint64_t* res2, uint64_t* res3,
-                                  uint64_t arg1, uint64_t arg2, uint64_t arg3)
+                                  uint64_t* res1)
 {
   user_regs_struct regs;
   if (!pause(regs))
     return false;
-  printf("ER1\n");
-  if (0 != setup_execution_func(regs, func, arg1, arg2, arg3))
+  if (0 != inject_func(regs, func, 0, 0, 0))
     return false;
-  printf("ER2\n");
-
-  if (!wait_return(res1, res2, res3))
+  if (!wait_return(res1, nullptr, nullptr))
     return false;
-  printf("ER3\n");
   return true;
 }
 
-bool probe_thread::execute_remote(interruption_func* func,
-                                  uint64_t* res1, uint64_t* res2,
-                                  uint64_t arg1, uint64_t arg2, uint64_t arg3)
-{
-  uint64_t res3;
-  return execute_remote(func, res1, res2, &res3, arg1, arg2, arg3);
-}
-
-bool probe_thread::execute_remote(interruption_func* func,
-                                  uint64_t* res1,
-                                  uint64_t arg1, uint64_t arg2, uint64_t arg3)
-{
-  uint64_t res2;
-  uint64_t res3;
-  bool res =
-   execute_remote(func, res1, &res2, &res3, arg1, arg2, arg3);
-  printf("res=%d\n",res);
-  return res;
-}
-
-bool probe_thread::execute_remote(interruption_func* func,
-                                  uint64_t arg1, uint64_t arg2, uint64_t arg3)
-{
-  uint64_t res1;
-  uint64_t res2;
-  uint64_t res3;
-  return execute_remote(func, &res1, &res2, &res3, arg1, arg2, arg3);
-}
 
 
 bool connect_client(uint64_t socket_hash)
@@ -342,58 +312,20 @@ bool connect_client(uint64_t socket_hash)
 
   return false;
 }
-
-
-int manager::connect_agent(uint64_t some_id)
-{
-  int conn_fd;
-  struct sockaddr_un conn_addr;
-
-  std::string unix_name{"@/wallclock/"};
-  char hex[8*2+1];
-  sprintf(hex, "%16.16lx", some_id);
-  unix_name.append(hex);
-  conn_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (conn_fd != -1)
-  {
-    memset(&conn_addr, 0, sizeof(struct sockaddr_un));
-    conn_addr.sun_family = AF_UNIX;
-    strncpy(conn_addr.sun_path, unix_name.c_str(), sizeof(conn_addr.sun_path) - 1);
-    conn_addr.sun_path[0] = '\0';
-    if (connect(conn_fd, (struct sockaddr *) &conn_addr, sizeof(struct sockaddr_un)) == 0)
-    {
-      this->conn_fd = conn_fd;
-      return conn_fd;
-    }
-    else
-      close(conn_fd);
-  }
-  return -1;
-}
-
-bool manager::read_bytes(void* ptr, size_t size)
-{
-  int res;
-  res = read(conn_fd, ptr, size);
-  return res == size;
-}
-
-bool manager::write_bytes(const void* ptr, size_t size)
-{
-  int res;
-  res = write(conn_fd, ptr, size);
-  return res == size;
-}
 //bool trace_thread_new(pid_t pid, uint64_t& sc);
 
-bool manager::trace_thread_new(uint64_t& sc)
+bool Manager::trace_thread_new(uint64_t& sc)
 {
-  uint8_t cmd = agent::CMD_TRACE_THREAD_NEW;
+  uint8_t cmd = Agent::CMD_TRACE_THREAD_NEW;
   bool res = false;
   uint64_t sc_tmp;
-  if (write_bytes(&cmd, sizeof(uint8_t))) {
-    if (read_bytes(&sc_tmp, sizeof(uint64_t)))
+  printf("_a\n");
+  if (io.write_bytes(&cmd, sizeof(uint8_t))) {
+    printf("_b\n");
+    if (io.read_bytes(&sc_tmp, sizeof(uint64_t)))
     {
+      printf("_c\n");
+
       sc = sc_tmp;
       res = true;
     }
@@ -401,6 +333,37 @@ bool manager::trace_thread_new(uint64_t& sc)
   return res;
 }
 
+bool Manager::dump_tree(uint64_t sc)
+{
+  uint64_t hit_count;
+  uint64_t base_addr;
+  //uint64_t end_addr;
+  //uint64_t ip_addr;
+  std::string name;
+  int8_t cmd = Agent::CMD_DUMP_TREE;
+  bool res = false;
+  //uint64_t sc_tmp;
+  printf("_a sc=%lx\n",sc);
+  res = io.write(cmd);
+  if (res) res = io.write(sc);
+
+  //bool res;
+  uint32_t depth;
+  while (res)
+  {
+    res = io.read(depth);
+    if (res && depth != 0xffffffff) {
+      //if (res) res = io.read(base_addr);
+      if (res) res = io.read(name);
+      if (res) res = io.read(hit_count);
+
+      std::cout << std::string(depth*2, ' ') << " " << name << " " << hit_count << std::endl;
+      //out << std::hex << base_addr << std::dec << " " << name << " " << hit_count << " ip=" << std::hex << ip_addr-base_addr << std::dec << "\n";
+
+    }
+  }
+  return res;
+}
 
 
 #if 0

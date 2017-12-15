@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <inttypes.h>
 #include "loader.h"
+#include "unix_io.h"
 typedef void interruption_func(void);
 
 //extern "C"
@@ -35,11 +36,11 @@ private:
   /*
    *
    */
-  int setup_execution_frame(user_regs_struct& regs);
-  int setup_execution_frame(user_regs_struct& regs,
+  int inject_backtrace(user_regs_struct& regs);
+  int inject_backtrace(user_regs_struct& regs,
                             const user_regs_struct& previous_regs);
-public:
-  int setup_execution_func(user_regs_struct& regs,
+
+  int inject_func(user_regs_struct& regs,
                             interruption_func func,
                             uint64_t arg1 = 0,
                             uint64_t arg2 = 0,
@@ -51,7 +52,9 @@ public:
   bool cont();
   bool syscall();
   bool read_regs();
-  bool wait_return(uint64_t* arg1=nullptr, uint64_t* arg2=nullptr, uint64_t* arg3=nullptr);
+  bool wait_return(uint64_t* arg1=nullptr,
+                   uint64_t* arg2=nullptr,
+                   uint64_t* arg3=nullptr);
   bool wait_stop(int& wstatus, user_regs_struct& regs);
   bool grab_callback();
   void set_remote_context(uint64_t remote_context);
@@ -59,34 +62,27 @@ public:
   bool pause(user_regs_struct& regs);
 
   bool execute_remote(interruption_func* func,
-                      uint64_t* res1, uint64_t* res2, uint64_t* res3,
-                      uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
-  bool execute_remote(interruption_func* func,
-                      uint64_t* res1, uint64_t* res2,
-                      uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
-  bool execute_remote(interruption_func* func,
-                      uint64_t* res1,
-                      uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
-  bool execute_remote(interruption_func* func,
-                      uint64_t arg1 = 0, uint64_t arg2 = 0, uint64_t arg3 = 0);
-
+                      uint64_t* res1);
 
 };
 
-class manager
+class Manager
 {
-private:
+public:
+  UnixIO io;
+
+/*
+ private:
   int conn_fd;
 public:
   int connect_agent(uint64_t some_id);
   bool read_bytes(void* ptr, size_t size);
   bool write_bytes(const void* ptr, size_t size);
-
+*/
   bool trace_thread_new(uint64_t& sc);
+  bool dump_tree(uint64_t sc);
 
 };
-
-int connect_agent(uint64_t some_id);
 
 void execute_command();
 

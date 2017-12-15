@@ -8,7 +8,7 @@
 #include <tuple>
 #include <string>
 #include "callstep.h"
-
+#include "agent.h"
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
 
@@ -139,5 +139,36 @@ void callstep::print(uint32_t depth, std::ostream& out)
   //out << std::string(depth*2, ' ');
   //out << "}\n";
 }
+
+
+bool callstep::dump_tree(uint32_t depth, UnixIO& io)
+{
+
+  std::cout << std::string(depth*2, ' ');
+  std::cout << std::hex << base_addr << std::dec << " " << name << " " << hit_count << " ip=" << std::hex << ip_addr-base_addr << std::dec << "\n";
+  bool res;
+  res = io.write(depth);
+  //io.write(base_addr);
+  if (res) res = io.write(name);
+  if (res) res = io.write(hit_count);
+
+  if (res) {
+    uint64_t last=0;
+    for (auto &i: children)
+    {
+      if(last != i.second->base_addr)
+      {
+        last = i.second->base_addr;
+        res = i.second->dump_tree(depth+1, io);
+      }
+      if (!res)
+        break;
+    }
+  }
+  depth = 0xffffffff;
+  if (res) io.write(depth);
+  return res;
+}
+
 
 

@@ -33,7 +33,9 @@
 #include <fcntl.h>
 
 #include <poll.h>
-
+#define _GNU_SOURCE
+#include <unistd.h>
+#include <sys/syscall.h>
 #define local_assert(x) do { if(!x) *(char*)nullptr=0; } while(false)
 
 
@@ -50,35 +52,35 @@ extern "C"
 void _remote_return(uint64_t a=0, uint64_t b=0, uint64_t c=0);
 
 
-agent::agent()
+Agent::Agent()
 {
   sem_init(&wake_up, 0, 0);
 }
 
-agent* agent::create()
+Agent* Agent::create()
 {
-  agent* a = new agent();
+  Agent* a = new Agent();
   return a;
 }
 
-void agent::add_thread(thread_sampling_ctx* sc)
+void Agent::add_thread(thread_sampling_ctx* sc)
 {
   threads.push_back(sc);
 }
 
-agent* the_agent = nullptr;
-
+Agent* the_agent = nullptr;
+pid_t agent_pid = -1;
 int backtrace_reader(void* arg);
 
 
 void R_init_agent()
 {
   printf("R_init_agent\n");
-  the_agent = agent::create();//new agent;
+  the_agent = Agent::create();//new agent;
   pid_t v;
   constexpr size_t stack_size = 1024 * 64;
   char *vstack = (char*)malloc(stack_size);
-  if (clone(agent::worker, vstack + stack_size,
+  if (clone(Agent::worker, vstack + stack_size,
                  CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM,
             //CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID,
             the_agent, &v) == -1) {
@@ -86,6 +88,7 @@ void R_init_agent()
     _remote_return(0);
     return;
   }
+  agent_pid = v;
   //todo set thread name
   _remote_return(111111);
 
@@ -276,6 +279,7 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
 #if 1
 void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ctx* sc)
 {
+  printf(":\n");
   if (sc->lock.exchange(true) == false)
   {
     bool b;
@@ -322,6 +326,9 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
         //make sure reader is notified
         sem_trywait(&conv->notify);
         sem_post(&conv->notify);
+        //tkill(agent_pid, SIGUSR1);
+        //tid =
+        syscall(SYS_tkill, agent_pid, SIGUSR1);
       }
     }
     local_assert(sc->lock.exchange(false) == true);
@@ -350,6 +357,7 @@ thread_sampling_ctx* thread_sampling_ctx::create()
 //callstep* root = nullptr;
 void thread_sampling_ctx::peek()
 {
+  printf("PEEK this=%p\n", this);
   if (sem_trywait(&conv->notify) == 0)
   {
     //notified.
@@ -392,6 +400,10 @@ void thread_sampling_ctx::peek()
 
 
 
+void thread_sampling_ctx::dump_tree(UnixIO& io)
+{
+  root->dump_tree(0, io);
+}
 
 
 
@@ -407,71 +419,7 @@ void R_print_peek(thread_sampling_ctx* sc)
 
 
 
-int create_unix_server(uint64_t some_id)
-{
-  int serv_fd, cfd;
-  struct sockaddr_un serv_addr;
-
-  std::string unix_name{"@/wallclock/"};
-  char hex[8*2+1];
-  sprintf(hex, "%16.16lx", some_id);
-  unix_name.append(hex);
-
-  serv_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (serv_fd != -1)
-  {
-    memset(&serv_addr, 0, sizeof(struct sockaddr_un));
-    serv_addr.sun_family = AF_UNIX;
-    strncpy(serv_addr.sun_path, unix_name.c_str(), sizeof(serv_addr.sun_path) - 1);
-    serv_addr.sun_path[0] = '\0';
-
-    if (bind(serv_fd, (struct sockaddr *) &serv_addr, sizeof(struct sockaddr_un)) != -1)
-    {
-      if (listen(serv_fd, 1) == 0)
-      {
-        return serv_fd;
-      }
-    }
-    else
-      close(serv_fd);
-  }
-  return -1;
-}
-
-
-int wait_unix_conn(int serv_fd)
-{
-  int flags;
-  int conn_fd = -1;
-  flags = fcntl(serv_fd, F_GETFL);
-  if (fcntl(serv_fd, F_SETFL, flags | O_NONBLOCK) == 0)
-  {
-    struct sockaddr_un peer_addr;
-    socklen_t peer_addr_size;
-    int i=0;
-    do
-    {
-      conn_fd = accept(serv_fd, (struct sockaddr *) &peer_addr, &peer_addr_size);
-      if (conn_fd == -1)
-      {
-        printf("errno=%d\n",errno);
-        if (errno != EWOULDBLOCK)
-          break;
-        else
-          usleep(100*1000);
-      }
-      i++;
-    } while ((conn_fd == -1) && (i < 10));
-  }
-
-  fcntl(serv_fd, F_SETFL, flags);
-  return conn_fd;
-}
-
-
-
-
-bool agent::trace_thread_new()
+bool Agent::trace_thread_new()
 {
   printf("R_create_sampling_context\n");
   thread_sampling_ctx* sc = thread_sampling_ctx::create();
@@ -480,47 +428,47 @@ bool agent::trace_thread_new()
   _remote_return((uint64_t)sc);
   printf(">>>sc=%p\n",sc);
 
-  write_bytes(&sc,sizeof(sc));
+  io.write_bytes(&sc,sizeof(sc));
   return true;
 }
 
-
-int agent::wait_read()
+bool Agent::dump_tree(thread_sampling_ctx* tsx)
 {
-  struct pollfd fds;
-  fds.fd = conn_fd;
-  fds.events = POLLIN;
-  int r;
-  r = poll(&fds, 1, 100);
-  if (r == -1)
-    r = -errno;
-  return r;
+  tsx->dump_tree(io);
+  return true;
 }
 
-bool agent::read_bytes(void* ptr, size_t size)
+bool Agent::dump_tree()
 {
-  int res;
-  res = read(conn_fd, ptr, size);
-  return res == size;
+  uint64_t tsx;
+  bool res = false;
+  if (io.read_bytes(&tsx, sizeof(uint64_t)))
+  {
+    res = dump_tree((thread_sampling_ctx*)tsx);
+  }
+  return res;
 }
 
-bool agent::write_bytes(const void* ptr, size_t size)
-{
-  int res;
-  res = write(conn_fd, ptr, size);
-  return res == size;
-}
 
-bool agent::worker()
+
+bool Agent::worker()
 {
 
-  uint8_t cmd;
+  int server_fd;
+  int conn_fd;
+  server_fd = io.server(111111);
+  printf("server_fd=%d\n",server_fd);
+  conn_fd = io.accept(server_fd);
+  close(server_fd);
+  printf("conn_fd = %d\n", conn_fd);
+  //io->conn_fd = conn_fd;
+
 
   int r;
   bool do_continue = true;
   while (do_continue)
   {
-    r = agent::wait_read();
+    r = io.wait_read();
     if (r == -EINTR)
     {
       //scan through
@@ -531,7 +479,8 @@ bool agent::worker()
     }
     if (r>0)
     {
-      if (!read_bytes(&cmd,sizeof(uint8_t)))
+      uint8_t cmd;
+      if (!io.read_bytes(&cmd,sizeof(uint8_t)))
       {
         do_continue = false;
         break;
@@ -547,26 +496,28 @@ bool agent::worker()
           do_continue = false;
           break;
 
+        case CMD_DUMP_TREE:
+          if (!dump_tree())
+            do_continue = false;
+          break;
       }
     }
   }
+  printf("Agent exited\n");
   return true;
 }
 
 
-int agent::worker(void* arg)
+void empty_signal(int)
 {
-  agent* an_agent = (agent*)arg;
-  printf("subthread\n");
-  int server_fd;
-  int conn_fd;
-  server_fd = create_unix_server(111111);
-  printf("server_fd=%d\n",server_fd);
-  conn_fd = wait_unix_conn(server_fd);
-  close(server_fd);
-  printf("conn_fd = %d\n", conn_fd);
-  an_agent->conn_fd = conn_fd;
+}
 
+
+int Agent::worker(void* arg)
+{
+  Agent* an_agent = (Agent*)arg;
+  printf("subthread\n");
+  signal(SIGUSR1, empty_signal);
   an_agent->worker();
   return 0;
 }
