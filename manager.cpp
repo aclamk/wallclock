@@ -24,7 +24,7 @@
 
 #include "agent.h"
 
-int probe_thread::inject_backtrace(user_regs_struct& regs)
+int monitored_thread::inject_backtrace(user_regs_struct& regs)
 {
   //make frame big enough to skip "scratch area"
   //x86_64-abi section 3.2.2 The Stack Frame, declares sp+0 .. sp+128 as reserved
@@ -40,7 +40,7 @@ int probe_thread::inject_backtrace(user_regs_struct& regs)
   return ret;
 }
 
-int probe_thread::inject_backtrace(user_regs_struct& regs,
+int monitored_thread::inject_backtrace(user_regs_struct& regs,
                                         const user_regs_struct& previous_regs)
 {
   int ret;
@@ -65,7 +65,7 @@ int probe_thread::inject_backtrace(user_regs_struct& regs,
   return ret;
 }
 
-int probe_thread::inject_func(user_regs_struct& regs,
+int monitored_thread::inject_func(user_regs_struct& regs,
                                        interruption_func func,
                                        uint64_t arg1, uint64_t arg2, uint64_t arg3)
 {
@@ -88,12 +88,11 @@ int probe_thread::inject_func(user_regs_struct& regs,
   regs.rip = agent_interface_remote._wc_inject;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
-  printf("ret=%d\n",ret);
   return ret;
 }
 
 
-bool probe_thread::seize(pid_t target)
+bool monitored_thread::seize(pid_t target)
 {
   if (m_target != 0)
     detach();
@@ -110,7 +109,7 @@ bool probe_thread::seize(pid_t target)
   return (ret == 0);
 }
 
-bool probe_thread::detach()
+bool monitored_thread::detach()
 {
   long ret;
   ret = ptrace(PTRACE_INTERRUPT, m_target, nullptr, nullptr);
@@ -123,52 +122,48 @@ bool probe_thread::detach()
   return (ret == 0);
 }
 
-bool probe_thread::signal_interrupt()
+bool monitored_thread::signal_interrupt()
 {
   long ret;
   ret = ptrace(PTRACE_INTERRUPT, m_target, nullptr, nullptr);
   return (ret == 0);
 }
 
-bool probe_thread::cont()
+bool monitored_thread::cont()
 {
   long ret;
   ret = ptrace(PTRACE_CONT, m_target, nullptr, nullptr);
   return (ret == 0);
 }
 
-bool probe_thread::syscall()
+bool monitored_thread::syscall()
 {
   long ret;
   ret = ptrace(PTRACE_SYSCALL, m_target, nullptr, nullptr);
   return (ret == 0);
 }
 
-bool probe_thread::read_regs()
+bool monitored_thread::read_regs()
 {
   long ret;
   ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
   return (ret == 0);
 }
 
-bool probe_thread::wait_return(uint64_t* arg1, uint64_t* arg2, uint64_t* arg3)
+bool monitored_thread::wait_return(uint64_t* arg1, uint64_t* arg2, uint64_t* arg3)
 {
   bool result = false;
   int ret;
   user_regs_struct regs;
   do
   {
-    printf("wr1\n");
     if (!syscall()) {
       break;
     }
-    printf("wr2\n");
     int wstatus;
     if (!wait_stop(wstatus, regs)) {
       break;
     }
-    printf("wr3\n");
-
     if (WIFSTOPPED(wstatus) && ((WSTOPSIG(wstatus) & ~0x80) == (SIGTRAP | 0x00)))
     {
       ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
@@ -189,24 +184,20 @@ bool probe_thread::wait_return(uint64_t* arg1, uint64_t* arg2, uint64_t* arg3)
     }
   }
   while (true);
-  printf("wr4\n");
   if(result)
     result = cont();
   return result;
 }
 
-bool probe_thread::wait_stop(int& wstatus, user_regs_struct& regs)
+bool monitored_thread::wait_stop(int& wstatus, user_regs_struct& regs)
 {
   long ret;
-  printf("a\n");
   pid_t ppp = waitpid(m_target, &wstatus, 0);
   if (ppp != m_target)
     return false;
-  printf("b\n");
   ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
   if (ret != 0)
     return false;
-  printf("c\n");
   errno = 0;
   uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip-2), nullptr);
   if (errno != 0)
@@ -216,10 +207,8 @@ bool probe_thread::wait_stop(int& wstatus, user_regs_struct& regs)
     ret = ptrace(PTRACE_SINGLESTEP, m_target, nullptr, nullptr);
     if (ret != 0)
       return false;
-    printf("d\n");
     waitpid(m_target, &wstatus, 0);
     ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
-    printf("e\n");
 
     if (ret != 0)
       return false;
@@ -228,7 +217,7 @@ bool probe_thread::wait_stop(int& wstatus, user_regs_struct& regs)
 }
 
 
-bool probe_thread::grab_callback()
+bool monitored_thread::grab_callback()
 {
   long ret;
   ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
@@ -244,6 +233,7 @@ bool probe_thread::grab_callback()
     if (ret == 0)
     {
       int wstatus;
+      int rrr;
       waitpid(m_target, &wstatus, 0);
       user_regs_struct regs_as;
       ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs_as);
@@ -251,6 +241,10 @@ bool probe_thread::grab_callback()
       {
         ret = inject_backtrace(regs_as, regs);
       }
+    }
+    else
+    {
+      return false;
     }
   }
   else
@@ -272,12 +266,12 @@ bool probe_thread::grab_callback()
   return (ret == 0);
 }
 
-void probe_thread::set_remote_context(uint64_t remote_context)
+void monitored_thread::set_remote_context(uint64_t remote_context)
 {
   this->remote_context = remote_context;
 }
 
-bool probe_thread::pause(user_regs_struct& regs)
+bool monitored_thread::pause(user_regs_struct& regs)
 {
   if (!signal_interrupt())
     return false;
@@ -290,7 +284,7 @@ bool probe_thread::pause(user_regs_struct& regs)
 
 
 
-bool probe_thread::execute_remote(interruption_func* func,
+bool monitored_thread::execute_remote(interruption_func* func,
                                   uint64_t* res1)
 {
   user_regs_struct regs;
@@ -349,7 +343,7 @@ bool Manager::dump_tree(uint64_t sc)
 
   //bool res;
   uint32_t depth;
-  while (res)
+  do
   {
     res = io.read(depth);
     if (res && depth != 0xffffffff) {
@@ -362,6 +356,7 @@ bool Manager::dump_tree(uint64_t sc)
 
     }
   }
+  while (res && depth != 0xffffffff);
   return res;
 }
 

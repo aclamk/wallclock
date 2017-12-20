@@ -30,7 +30,7 @@ public:
   /*creates sampling context for calling thread*/
   static thread_sampling_ctx* create();
   void peek();
-  void dump_tree(UnixIO& io);
+  bool dump_tree(UnixIO& io);
 };
 
 

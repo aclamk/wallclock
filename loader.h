@@ -9,7 +9,7 @@
 #define LOADER_H_
 
 #include <inttypes.h>
-
+class Manager;
 typedef uint64_t vm_addr_t;
 
 struct RemoteAPI
@@ -24,6 +24,6 @@ struct RemoteAPI
 };
 
 extern RemoteAPI agent_interface_remote;
-void init_agent_interface(pid_t remote);
+bool init_agent_interface(Manager& mgr, pid_t remote);
 
 #endif /* LOADER_H_ */

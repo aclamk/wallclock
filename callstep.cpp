@@ -165,8 +165,6 @@ bool callstep::dump_tree(uint32_t depth, UnixIO& io)
         break;
     }
   }
-  depth = 0xffffffff;
-  if (res) io.write(depth);
   return res;
 }
 

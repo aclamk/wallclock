@@ -13,6 +13,7 @@
 #include "loader.h"
 #include <string.h>
 #include <assert.h>
+#include "manager.h"
 
 extern RemoteAPI agent_interface;
 RemoteAPI agent_interface_remote;
@@ -61,7 +62,7 @@ void* locate_library(pid_t pid, const std::string& library_name)
 
 extern RemoteAPI agent_interface;
 
-void init_agent_interface(pid_t remote)
+bool init_agent_interface(Manager& mgr, pid_t remote)
 {
   void* my_agent_so = locate_library(syscall(SYS_gettid), "agent.so");
   void* remote_agent_so = locate_library(remote, "agent.so");
@@ -81,6 +82,29 @@ void init_agent_interface(pid_t remote)
   agent_interface_remote.R_init_agent += diff;
   agent_interface_remote.R_create_sampling_context += diff;
   agent_interface_remote.R_print_peek += diff;
+
+  long ret;
+   monitored_thread pt;
+   int conn_fd;
+   if (! pt.seize(remote))
+     return false;
+   sleep(1);
+   user_regs_struct regs;
+   int wstatus;
+
+   uint64_t unix_id;
+   if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_init_agent, &unix_id))
+     return false;
+   usleep(500*1000);
+   //Manager mgr;
+   conn_fd = mgr.io.connect(unix_id);
+   printf("conn_fd=%d\n",conn_fd);
+   if (conn_fd == -1)
+     return false;
+
+   if (!pt.detach())
+     return false;
+   return true;
 }
 
 

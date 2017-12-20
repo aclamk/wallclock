@@ -21,11 +21,11 @@ typedef void interruption_func(void);
 
 
 
-class probe_thread
+class monitored_thread
 {
 public:
-  probe_thread() {}
-  ~probe_thread() {}
+  monitored_thread() {}
+  ~monitored_thread() {}
 
   user_regs_struct regs;
 
@@ -71,14 +71,6 @@ class Manager
 public:
   UnixIO io;
 
-/*
- private:
-  int conn_fd;
-public:
-  int connect_agent(uint64_t some_id);
-  bool read_bytes(void* ptr, size_t size);
-  bool write_bytes(const void* ptr, size_t size);
-*/
   bool trace_thread_new(uint64_t& sc);
   bool dump_tree(uint64_t sc);
 

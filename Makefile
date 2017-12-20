@@ -55,7 +55,7 @@ largecode.o: largecode.cpp
 
 
 testprog: testprog.cpp largecode.o
-	g++ $^ -o $@ 
+	g++ $^ -o $@ -lpthread
 
 #tightloop: tightloop.cpp
 #	g++ tightloop.cpp -o tightloop

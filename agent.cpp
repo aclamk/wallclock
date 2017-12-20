@@ -160,10 +160,16 @@ public:
 
 //private:
 public:
+  enum {
+    notified_none = 0,
+    notified_signalled = 1,
+    notified_accepted = 3,
+
+  };
   size_t size{4096};
   std::atomic<size_t> produced{0};
   size_t consumed{0};
-  sem_t notify;
+  std::atomic<uint8_t> notified{notified_none};
   uint64_t* ip_table;
 };
 
@@ -279,7 +285,6 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
 #if 1
 void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ctx* sc)
 {
-  printf(":\n");
   if (sc->lock.exchange(true) == false)
   {
     bool b;
@@ -321,16 +326,36 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
 
       conv->advance(count);
       sc->counter++;
-
+#if 0
       if (avail < conv->size/2) {
         //make sure reader is notified
-        sem_trywait(&conv->notify);
-        sem_post(&conv->notify);
+        uint8_t notif;
+        notif = conv->notified.exchange(conv->notified_signalled);
+        if (notif == conv->notified_none)
+        {
+          //transition from not-signalled to signalled
+          syscall(SYS_tkill, agent_pid, SIGUSR1);
+        }
+        //sem_trywait(&conv->notify);
+        //sem_post(&conv->notify);
         //tkill(agent_pid, SIGUSR1);
         //tid =
+        //syscall(SYS_tkill, agent_pid, SIGUSR1);
+      }
+#endif
+    }
+    if (conv->produce_avail() < conv->size/2)
+    {
+      //make sure reader is notified
+      uint8_t notif;
+      notif = conv->notified.exchange(conv->notified_signalled);
+      if (notif == conv->notified_none)
+      {
+        //transition from not-signalled to signalled
         syscall(SYS_tkill, agent_pid, SIGUSR1);
       }
     }
+
     local_assert(sc->lock.exchange(false) == true);
   }
 }
@@ -358,7 +383,8 @@ thread_sampling_ctx* thread_sampling_ctx::create()
 void thread_sampling_ctx::peek()
 {
   printf("PEEK this=%p\n", this);
-  if (sem_trywait(&conv->notify) == 0)
+  if (conv->notified_signalled == conv->notified.exchange(conv->notified_signalled))
+//  if (sem_trywait(&conv->notify) == 0)
   {
     //notified.
 
@@ -395,14 +421,19 @@ void thread_sampling_ctx::peek()
 
     }
     conv->consumed += avail_copy;
+    local_assert(conv->notified_signalled == conv->notified.exchange(conv->notified_none));
   }
 }
 
 
 
-void thread_sampling_ctx::dump_tree(UnixIO& io)
+bool thread_sampling_ctx::dump_tree(UnixIO& io)
 {
-  root->dump_tree(0, io);
+  bool res;
+  res = root->dump_tree(0, io);
+  uint32_t depth = 0xffffffff;
+  if (res) io.write(depth);
+  return res;
 }
 
 

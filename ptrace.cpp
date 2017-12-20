@@ -18,6 +18,12 @@
 #include <sys/wait.h>
 #include <atomic>
 #include <semaphore.h>
+#include <sys/time.h>
+
+       #include <sys/types.h>
+       #include <sys/time.h>
+       #include <sys/resource.h>
+       #include <sys/wait.h>
 
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
@@ -109,70 +115,140 @@ void _remote_return(uint64_t a, uint64_t b, uint64_t c);
 
 
 
+monitored_thread* xxxx;
+int xxxxcount{0};
+void empty_signal(int)
+{
+  printf("alarm\n");
+  xxxxcount++;
+  xxxx->signal_interrupt();
+}
 
 
-bool probe(int target_pid)
+
+
+bool probe(Manager& mgr, std::vector<pid_t>& tids)
 {
   long ret;
-  probe_thread pt;
-  int conn_fd;
-  if (! pt.seize(target_pid))
-    return false;
-  sleep(1);
-  user_regs_struct regs;
-  int wstatus;
+  //probe_thread pt;
+  printf("tids.size()=%d\n",tids.size());
+  std::vector<monitored_thread> pts;
+  pts.resize(tids.size());
 
-  uint64_t unix_id;
-  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_init_agent, &unix_id))
-    return false;
-  usleep(500*1000);
-  Manager mgr;
-  conn_fd = mgr.io.connect(unix_id);
-  printf("conn_fd=%d\n",conn_fd);
-  sleep(1);
-  uint64_t context;
-  if (!mgr.trace_thread_new(context))
-    return false;
-//  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_create_sampling_context, &context))
-//    return false;
-  printf("probe 1 context=%lx\n",context);
-  pt.set_remote_context(context);
+  int conn_fd;
+  bool res = true;
+  for (size_t i=0; i<tids.size(); i++)
+  {
+    if (res) res = pts[i].seize(tids[i]);
+    //for (auto& t : tids)
+    //{
+    //  if (res) res = pt.seize(t);
+    //}
+  }
+  //if (!pt.seize(target_pid))
+  //  return false;
+  //Manager mgr;
+
+  std::vector<uint64_t> contexts;
+  contexts.resize(tids.size());
+  int wstatus;
+  //uint64_t context;
+  for (size_t i=0; i<tids.size(); i++)
+  {
+    if (res) res = mgr.trace_thread_new(contexts[i]);
+    if (res) pts[i].set_remote_context(contexts[i]);
+  }
+  //if (!mgr.trace_thread_new(context))
+  //  return false;
+
+  //printf("probe 1 context=%lx\n",context);
+  //pt.set_remote_context(context);
   sleep(1);
 
   printf("R2\n");
 
-  if (! pt.signal_interrupt())
-    return false;
 
-  for (int i=0;i<1000;i++)
+  for (size_t i=0; i<tids.size(); i++)
   {
-    if ((i%100) == 0)
-    std::cout << "it " << i << std::endl;
-    pid_t ppp = waitpid(target_pid, &wstatus, 0);
-    if (WSTOPSIG(wstatus) == SIGTRAP)
+    //if (res) res = pts[i].signal_interrupt();
+  }
+//  if (! pt.signal_interrupt())
+//    return false;
+  printf("tids.size()=%d\n",tids.size());
+  uint64_t time = 0;
+  for (int iter=0;iter<1000;iter++)
+  {
+    res = true;
+    if ((iter%100) == 0)
+    std::cout << "it " << iter << "time=" << time/(double)1000000/iter << "ms " << xxxxcount << std::endl;
+
+    usleep(5*1000);
+
+    uint64_t start = - now();
+    for (size_t i = 0; i<tids.size(); i++)
     {
-      bool b;
-      b = pt.grab_callback();
-      assert(b);
+#if 1
+      xxxx = &pts[i];
+      if (!pts[i].signal_interrupt())
+        printf("cannot interrupt!\n");
+      //if (!pts[i].signal_interrupt())
+      //    printf("cannot interrupt!\n");
+      struct itimerval curr_value;
+      struct itimerval new_value;
+      struct itimerval old_value;
+      getitimer(ITIMER_REAL, &curr_value);
+      curr_value.it_interval.tv_sec = 0;
+      curr_value.it_interval.tv_usec = 0;
+      curr_value.it_value.tv_sec = 3;
+      curr_value.it_value.tv_usec = 0;
+      setitimer(ITIMER_REAL,
+                &curr_value,
+                &old_value);
+      //char c[100];
+      //res = sleep(100);
+      //printf("res=%d errno=%d\n",res,errno);
+
+      //pid_t ppp = waitpid(tids[i], &wstatus, 0);
+      struct rusage rusage;
+      //printf("(%d) tids[i]=%d\n",xxxxcount.load(), tids[i]);
+      pid_t ppp = wait4(tids[i], &wstatus, 0, &rusage);
+      //printf("ppp=%d\n",ppp);
+
+      if (ppp == tids[i])
+      {
+        if (WSTOPSIG(wstatus) == SIGTRAP)
+        {
+          bool b;
+          b = pts[i].grab_callback();
+          assert(b);
+        }
+        else
+        {
+          std::cout << "not SIGTRAP " << WSTOPSIG(wstatus) << std::endl;
+        }
+        //break;
+      }
+      else
+      {
+        std::cout << "!ppp" << std::endl;
+        abort();
+      }
+      //usleep(1*1000);
+#endif
     }
-    else
-    {
-      std::cout << "not SIGTRAP " << WSTOPSIG(wstatus) << std::endl;
-    }
-    //ret = ptrace(PTRACE_CONT, target_pid, NULL, 0);
-    //assert(ret == 0);
-    usleep(10*1000);
-    ret = ptrace(PTRACE_INTERRUPT, target_pid, NULL, 0);
-    assert(ret == 0);
+
+
+
+    start += now();
+   // std::cout << start/(double)1000000 << "ms" << std::endl;
+    time += start;
   }
 
-
-  mgr.dump_tree(context);
-
-//  waitpid(target_pid, nullptr, 0);
-//  pt.cont();
-//  if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_print_peek, &context))
-//      return false;
+  for (size_t i=0; i<tids.size(); i++)
+  {
+    mgr.dump_tree(contexts[i]);
+  }
+  printf("dump end\n");
 }
 
 
@@ -196,9 +272,10 @@ void* locate_library(pid_t pid, const std::string& library_name);
 
 int main(int argc, char** argv)
 {
+  std::vector<pid_t> tids;
 
   pid_t v;
-
+  signal(SIGALRM, empty_signal);
 #if 1
  //_wrapper();
 
@@ -210,15 +287,19 @@ int main(int argc, char** argv)
   }
   else
   {
-    v = atoi(argv[1]);
-    printf("REMOTE_TID=%d\n",v);
+    for (int i = 1; i < argc ; i++)
+    {
+      v = atoi(argv[i]);
+      printf("REMOTE_TID=%d\n",v);
+      tids.push_back(v);
+    }
   }
 
 #endif
 
   printf("ADD=%lx\n", (uint64_t)locate_library(v,"agent.so"));
-
-  init_agent_interface(v);
+  Manager mgr;
+  init_agent_interface(mgr, v);
   //int pid = atoi(argv[1]);
 
   //std::cout << "TID=" << tid << std::endl;
@@ -226,7 +307,8 @@ int main(int argc, char** argv)
   //tid=pid;
   std::cout << "TID=" << tid << std::endl;
   static_tid = 0;
-  probe(tid);
+
+  probe(mgr, tids);
 
   long ret = ptrace (PTRACE_INTERRUPT, tid, NULL, 0);
   std::cout << "interrupt ret=" << ret << std::endl;
