@@ -14,28 +14,30 @@
 #include <inttypes.h>
 #include "loader.h"
 #include "unix_io.h"
+#include <atomic>
 typedef void interruption_func(void);
 
-//extern "C"
-//void* agent_interface[4];
-
-
+typedef uint64_t remote_sampling_ctx;
 
 class monitored_thread
 {
 public:
   monitored_thread() {}
+  monitored_thread(monitored_thread&& mt):
+    m_target(mt.m_target),
+    m_retry(mt.m_retry),
+    m_remote_context(mt.m_remote_context),
+    m_backtrace_inject_requests(mt.m_backtrace_inject_requests.load()) {}
   ~monitored_thread() {}
 
   user_regs_struct regs;
 
-private:
+public:
   pid_t m_target{0};
   bool m_retry{false};
-  uint64_t remote_context{0};
-  /*
-   *
-   */
+  remote_sampling_ctx m_remote_context{0};
+  std::atomic<uint32_t> m_backtrace_inject_requests{0};
+
   int inject_backtrace(user_regs_struct& regs);
   int inject_backtrace(user_regs_struct& regs,
                             const user_regs_struct& previous_regs);
@@ -72,11 +74,13 @@ public:
   UnixIO io;
 
   bool trace_thread_new(uint64_t& sc);
-  bool dump_tree(uint64_t sc);
+  bool dump_tree(pid_t tid);
 
+  bool indirect_backtrace(uint64_t sc, uint64_t rip, uint64_t rbp, uint64_t rsp);
+  bool trace_attach(pid_t pid);
+  bool probe();
 };
 
 void execute_command();
-
 
 #endif /* MANAGER_H_ */

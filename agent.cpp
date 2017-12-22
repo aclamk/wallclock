@@ -36,7 +36,12 @@
 #define _GNU_SOURCE
 #include <unistd.h>
 #include <sys/syscall.h>
-#define local_assert(x) do { if(!x) *(char*)nullptr=0; } while(false)
+#define local_assert(x) do { if(!(x)) *(char*)nullptr=0; } while(false)
+
+#include <sys/ptrace.h>
+#include <sys/user.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 
 extern "C"
@@ -91,7 +96,6 @@ void R_init_agent()
   agent_pid = v;
   //todo set thread name
   _remote_return(111111);
-
 }
 
 void R_create_sampling_context()
@@ -103,10 +107,6 @@ void R_create_sampling_context()
   _remote_return((uint64_t)sc);
   printf(">>>sc=%p\n",sc);
 }
-
-
-
-
 
 extern "C" void grab_callstack(void);
 
@@ -163,8 +163,6 @@ public:
   enum {
     notified_none = 0,
     notified_signalled = 1,
-    notified_accepted = 3,
-
   };
   size_t size{4096};
   std::atomic<size_t> produced{0};
@@ -173,118 +171,15 @@ public:
   uint64_t* ip_table;
 };
 
-
 static constexpr uint64_t impossible_ip = 0x7fffeeeeddddccccLL;
-
-
-
 
 extern "C"
 void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ctx* sc);
 
-
-#if 0
 void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ctx* sc)
 {
-  //printf(":\n");
-  if (sc->lock.exchange(true) == true)
-    return;
-  //sampling_context* sc;
-  sc->counter++;
-  bool b;
-  conveyor* conv = sc->conv;
-  //backtrace_counter++;
-  unw_cursor_t cursor;
-  unw_context_t uc;
-  unw_word_t ip, sp;
-  unw_getcontext(&uc);
-  uc.uc_mcontext.gregs[REG_RBP] = rbp;
-  uc.uc_mcontext.gregs[REG_RIP] = rip;
-  uc.uc_mcontext.gregs[REG_RSP] = rsp;
-  if (rip - (uint64_t)&rand <16)
-    {
-      printf("\n----- close enough %lx\n",rip);
-    }
-  size_t count = 0;
-  uint64_t* pos = conv->produce_pos();
-  size_t avail = conv->produce_avail();
-  if (avail <= 1) {
-    goto end;
-  }
-  *pos = rip;
-  ip = rip;
-  if(*pos == 0) sc->counter--;
-  pos = conv->next(pos);
-  count++;
-  avail--;
-  if(ip == 0) goto ended;
-  unw_init_local(&cursor, &uc);
-  b=!(rip&0x03f);
-  uint64_t rbp_arch;
-  uint64_t rsp_arch;
-  while (unw_step(&cursor) > 0)
-  {
-    unw_get_reg(&cursor, UNW_REG_SP, &rsp_arch);
-
-    if (avail == 0) {
-      goto end;
-    }
-    unw_get_reg(&cursor, UNW_REG_IP, &ip);
-#if 0
-    if (ip>0x800000000000L){
-      printf("#%ld XXXXX = %lx SP=%lx rsp=%lx rip=%lx rand=%lx\n", count, ip,rsp_arch,rsp,rip, &rand);
-      printf("XXXXX rsp=%lx rbp=%lx *sp=%lx *(rbp+8)=%lx\n", rsp, rbp, *(uint64_t*)(rsp), *(uint64_t*)(rbp+8));
-      //unw_set_reg(&cursor, UNW_REG_IP, ip>>8);
-//      b=true;
-      {
-        unw_cursor_t cursor1;
-        unw_init_local(&cursor1, &uc);
-        while (unw_step(&cursor1) > 0)
-        {
-          unw_word_t ip1,sp1;
-          unw_get_reg(&cursor1, UNW_REG_IP, &ip1);
-          unw_get_reg(&cursor1, UNW_REG_SP, &sp1);
-          printf(">>>> sp=%lx ip=%lx\n",sp1, ip1);
-        }
-      }
-    }
-#endif
-    *pos = ip;
-    if(*pos == 0) sc->counter--;
-
-    pos = conv->next(pos);
-    count++;
-    avail--;
-    if (ip == 0) goto ended;
-  }
-  if (ip != 0)
-  {
-    if(avail == 0)
-      goto end;
-    *pos = 0;
-    if(*pos == 0) sc->counter--;
-
-    pos = conv->next(pos);
-    count++;
-    avail--;
-  }
-
-  ended:
-  conv->advance(count);
-  if (avail < conv->size/2) {
-    //make sure reader is notified
-    sem_trywait(&conv->notify);
-    sem_post(&conv->notify);
-  }
-  end:
-  local_assert(sc->lock.exchange(false) == true);
-}
-#endif
-
-
-#if 1
-void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ctx* sc)
-{
+  //printf("get_backtrace start \n");
+  sc->backtrace_injected++;
   if (sc->lock.exchange(true) == false)
   {
     bool b;
@@ -325,24 +220,7 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
       avail--;
 
       conv->advance(count);
-      sc->counter++;
-#if 0
-      if (avail < conv->size/2) {
-        //make sure reader is notified
-        uint8_t notif;
-        notif = conv->notified.exchange(conv->notified_signalled);
-        if (notif == conv->notified_none)
-        {
-          //transition from not-signalled to signalled
-          syscall(SYS_tkill, agent_pid, SIGUSR1);
-        }
-        //sem_trywait(&conv->notify);
-        //sem_post(&conv->notify);
-        //tkill(agent_pid, SIGUSR1);
-        //tid =
-        //syscall(SYS_tkill, agent_pid, SIGUSR1);
-      }
-#endif
+      sc->backtrace_collected++;
     }
     if (conv->produce_avail() < conv->size/2)
     {
@@ -358,10 +236,8 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
 
     local_assert(sc->lock.exchange(false) == true);
   }
+  //printf("get_backtrace end \n");
 }
-#endif
-
-
 
 thread_sampling_ctx::thread_sampling_ctx(size_t size)
 {
@@ -369,58 +245,55 @@ thread_sampling_ctx::thread_sampling_ctx(size_t size)
   root = new callstep(std::string(), 0);
 }
 
-
 thread_sampling_ctx* thread_sampling_ctx::create()
 {
-  thread_sampling_ctx* sc = new thread_sampling_ctx(4096);
+  thread_sampling_ctx* sc = new thread_sampling_ctx(16384);
   return sc;
 }
 
+void thread_sampling_ctx::consume()
+{
+  uint64_t* pos = conv->consume_pos();
+  ssize_t avail = conv->consume_avail();
+  ssize_t avail_copy = avail;
 
+  while (avail > 0)
+  {
+    pfunc++;
+    uint64_t* pos_i = pos;
+    size_t count = 0;
+    while (*pos_i != impossible_ip)
+    {
+      pos_i = conv->next(pos_i);
+      count++;
+      avail--;
+    }
+    pos = pos_i;
+    local_assert(*pos == impossible_ip);
+    pos_i = conv->prev(pos_i);
+    callstep* node = root;
+    while (count > 0)
+    {
+      if(node)node->hit_count++;
+      if(node)node = node->find_function(*pos_i);
+      pos_i = conv->prev(pos_i);
+      count --;
+    }
+    if(node)
+      node->hit_count++;
+    pos = conv->next(pos);
+    avail--;
 
+  }
+  conv->consumed += avail_copy;
+}
 
-//callstep* root = nullptr;
 void thread_sampling_ctx::peek()
 {
-  printf("PEEK this=%p\n", this);
+  //printf("PEEK this=%p\n", this);
   if (conv->notified_signalled == conv->notified.exchange(conv->notified_signalled))
-//  if (sem_trywait(&conv->notify) == 0)
   {
-    //notified.
-
-    uint64_t* pos = conv->consume_pos();
-    ssize_t avail = conv->consume_avail();
-    ssize_t avail_copy = avail;
-
-    while (avail > 0)
-    {
-      pfunc++;
-      uint64_t* pos_i = pos;
-      size_t count = 0;
-      while (*pos_i != impossible_ip)
-      {
-        pos_i = conv->next(pos_i);
-        count++;
-        avail--;
-      }
-      pos = pos_i;
-      local_assert(*pos == impossible_ip);
-      pos_i = conv->prev(pos_i);
-      callstep* node = root;
-      while (count > 0)
-      {
-        if(node)node->hit_count++;
-        if(node)node = node->find_function(*pos_i);
-        pos_i = conv->prev(pos_i);
-        count --;
-      }
-      if(node)
-        node->hit_count++;
-      pos = conv->next(pos);
-      avail--;
-
-    }
-    conv->consumed += avail_copy;
+    consume();
     local_assert(conv->notified_signalled == conv->notified.exchange(conv->notified_none));
   }
 }
@@ -441,7 +314,7 @@ bool thread_sampling_ctx::dump_tree(UnixIO& io)
 void R_print_peek(thread_sampling_ctx* sc)
 {
   _remote_return(0);
-  printf("R_print_peek counter=%ld pfunc=%ld\n",sc->counter.load(), sc->pfunc.load());
+  printf("R_print_peek counter=%ld pfunc=%ld\n",sc->backtrace_collected.load(), sc->pfunc.load());
   sc->root->print(0, std::cout);
 
 }
@@ -471,16 +344,122 @@ bool Agent::dump_tree(thread_sampling_ctx* tsx)
 
 bool Agent::dump_tree()
 {
-  uint64_t tsx;
+  pid_t tid;
   bool res = false;
-  if (io.read_bytes(&tsx, sizeof(uint64_t)))
+  if (io.read(tid))
   {
+    size_t i=0;
+    printf("tid=%d\n",tid);
+    for (i=0;i<threads.size();i++)
+    {
+      if (threads[i]->tid == tid) break;
+    }
+    printf("index=%d\n",i);
+    local_assert (i != threads.size());
+    thread_sampling_ctx* tsx = threads[i];
+    printf("tsx = %p\n",tsx);
+    tsx -> consume();
+    uint32_t depth=0;
+    res = io.write(depth);
+    if (res) res = io.write(std::string("injection cnt"));
+    uint64_t count = tsx->backtrace_injected.load();
+    if (res) res = io.write(count);
+    res = io.write(depth);
+    if (res) res = io.write(std::string("collected cnt"));
+    count = tsx->backtrace_collected.load();
+    if (res) res = io.write(count);
+
     res = dump_tree((thread_sampling_ctx*)tsx);
   }
   return res;
 }
 
+bool Agent::indirect_backtrace()
+{
+  uint64_t tsx_bin;
+  bool res = false;
+  printf("Agent::indirect_backtrace\n");
+  if (io.read_bytes(&tsx_bin, sizeof(uint64_t)))
+  {
+    thread_sampling_ctx* tsx = (thread_sampling_ctx*)tsx_bin;
+    uint64_t rip;
+    uint64_t rbp;
+    uint64_t rsp;
+    res = io.read(rip);
+    if (res) res = io.read(rbp);
+    if (res) res = io.read(rsp);
+    if (res) _get_backtrace(rip, rbp, rsp, tsx);
+    if (res) res = io.write(res);
+  }
+  return res;
+}
 
+bool Agent::trace_attach()
+{
+  bool ret = false;
+  pid_t pid;
+  if(io.read(pid))
+  {
+    ret = ptrace_attach(pid);
+  }
+  return true;
+}
+
+bool Agent::ptrace_attach(pid_t pid)
+{
+  bool ret = false;
+  int res;
+  res = ptrace(PTRACE_SEIZE, pid, 0, 0);
+  if (res == 0) {
+    thread_sampling_ctx* sc = thread_sampling_ctx::create();
+    printf("the_agent=%p sc=%p\n",the_agent, sc);
+    sc->tid = pid;
+    add_thread(sc);
+    ret = true;
+  }
+  printf("ATTACH %d res %d\n", pid, ret);
+  return ret;
+}
+
+
+bool Agent::probe()
+{
+  for (size_t i = 0; i<threads.size(); i++)
+  {
+    int ret;
+    ret = ptrace(PTRACE_INTERRUPT, threads[i]->tid, 0, 0);
+    pid_t wpid;
+    int wstatus;
+    user_regs_struct regs;
+
+    if (ret == 0)
+    {
+      int cnt=0;
+      do {
+      wpid = waitpid(threads[i]->tid, &wstatus, WCONTINUED|WNOHANG|WUNTRACED);
+      }
+      while (cnt++<1000000 && wpid==0);
+      if(wpid==0)
+        printf("cannot stop thread %d\n", threads[i]->tid);
+      //printf("wpid=%d\n",wpid);
+      if (WSTOPSIG(wstatus) != SIGTRAP) {
+        printf("NOT SIGTRAP %d \n",WSTOPSIG(wstatus));
+        ptrace(PTRACE_CONT, threads[i]->tid, 0, 0);
+        continue;
+      }
+      if (wpid == threads[i]->tid)
+      {
+        ret = ptrace(PTRACE_GETREGS, threads[i]->tid, nullptr, &regs);
+        if (ret == 0)
+        {
+          _get_backtrace(regs.rip, regs.rbp, regs.rsp, threads[i]);
+        }
+      }
+      ptrace(PTRACE_CONT, threads[i]->tid, 0, 0);
+    }
+  }
+  return true;
+}
 
 bool Agent::worker()
 {
@@ -516,6 +495,7 @@ bool Agent::worker()
         do_continue = false;
         break;
       }
+      //printf("cmd=%d\n",cmd);
       switch(cmd)
       {
         case CMD_TRACE_THREAD_NEW:
@@ -530,6 +510,24 @@ bool Agent::worker()
         case CMD_DUMP_TREE:
           if (!dump_tree())
             do_continue = false;
+          break;
+
+        case CMD_INDIRECT_BACKTRACE:
+          if (!indirect_backtrace())
+            do_continue = false;
+          break;
+        case CMD_TRACE_ATTACH:
+          if (!trace_attach())
+            do_continue = false;
+          break;
+        case CMD_PROBE:
+          probe();
+          uint32_t confirm = 0;
+          do_continue = io.write(confirm);
+          for (auto &it:threads)
+          {
+            it->peek();
+          }
           break;
       }
     }

@@ -22,14 +22,17 @@ class thread_sampling_ctx
   thread_sampling_ctx(size_t size);
 
 public:
+  pid_t tid;
+  std::atomic<bool> lock{0};
   conveyor* conv{nullptr};
   callstep* root{nullptr};
-  std::atomic<uint64_t> counter{0};
+  std::atomic<uint32_t> backtrace_injected{0};
+  std::atomic<uint32_t> backtrace_collected{0};
   std::atomic<uint64_t> pfunc{0};
-  std::atomic<bool> lock{0};
   /*creates sampling context for calling thread*/
   static thread_sampling_ctx* create();
   void peek();
+  void consume();
   bool dump_tree(UnixIO& io);
 };
 
@@ -48,14 +51,16 @@ public:
     CMD_TRACE_THREAD_NEW=1,
     CMD_TRACE_THREAD_END=2,
     CMD_TERMINATE=3,
-    CMD_DUMP_TREE=4
+    CMD_DUMP_TREE=4,
+    CMD_INDIRECT_BACKTRACE=5,
+    CMD_TRACE_ATTACH=6,
+    CMD_PROBE=7
   };
 
   static int worker(void*);
   UnixIO io;
 private:
 
-  int conn_fd;
   bool worker();
 
   int read_command();
@@ -63,6 +68,11 @@ private:
   bool trace_thread_new();
   bool dump_tree(thread_sampling_ctx* tsx);
   bool dump_tree();
+  bool indirect_backtrace();
+  bool trace_attach();
+  bool ptrace_attach(pid_t pid);
+
+  bool probe();
   friend int backtrace_reader(void* arg);
 };
 

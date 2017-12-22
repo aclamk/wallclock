@@ -87,14 +87,20 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
    monitored_thread pt;
    int conn_fd;
    if (! pt.seize(remote))
+   {
+     printf("failed to seize control over target\n");
      return false;
+   }
    sleep(1);
    user_regs_struct regs;
    int wstatus;
 
    uint64_t unix_id;
    if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_init_agent, &unix_id))
+   {
+     printf("failed to execute remote agent\n");
      return false;
+   }
    usleep(500*1000);
    //Manager mgr;
    conn_fd = mgr.io.connect(unix_id);

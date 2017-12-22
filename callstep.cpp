@@ -81,7 +81,6 @@ callstep* callstep::find_function(uint64_t ip_addr)
     std::string name;
     int64_t diff;
     std::tie(name, diff) = get_symbol(ip_addr);
-    //if (diff == -1) return nullptr;
 
     uint64_t base_addr;
     base_addr = ip_addr - diff;

@@ -30,13 +30,14 @@ int monitored_thread::inject_backtrace(user_regs_struct& regs)
   //x86_64-abi section 3.2.2 The Stack Frame, declares sp+0 .. sp+128 as reserved
   int ret;
   regs.rsp -= (128 + 8);
-  ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)remote_context);
+  ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)m_remote_context);
   regs.rsp -= 8;
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
   regs.rip = agent_interface_remote._wc_inject_backtrace;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
+  m_backtrace_inject_requests++;
   return ret;
 }
 
@@ -54,7 +55,7 @@ int monitored_thread::inject_backtrace(user_regs_struct& regs,
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)previous_regs.rsp);
   regs.rsp -= 8;
   if (ret == 0)
-    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)remote_context);
+    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)m_remote_context);
   regs.rsp -= 8;
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
@@ -62,6 +63,7 @@ int monitored_thread::inject_backtrace(user_regs_struct& regs,
   regs.rip = agent_interface_remote._wc_inject_backtrace_delayed;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
+  m_backtrace_inject_requests++;
   return ret;
 }
 
@@ -99,13 +101,18 @@ bool monitored_thread::seize(pid_t target)
   m_target = target;
   long ret;
   ret = ptrace(PTRACE_SEIZE, m_target, nullptr, nullptr);
-
-  signal_interrupt();
-  waitpid(m_target, nullptr, 0);
-  ret = ptrace(PTRACE_SETOPTIONS, m_target, 0, PTRACE_O_TRACESYSGOOD);
-  if (ret != 0)
-    return false;
-  cont();
+  if (ret == 0) {
+    if (!signal_interrupt()) ret = -1;
+  }
+  if (ret == 0) {
+    if (waitpid(m_target, nullptr, 0) != m_target) ret = -1;
+  }
+  if (ret == 0) {
+    ret = ptrace(PTRACE_SETOPTIONS, m_target, 0, PTRACE_O_TRACESYSGOOD);
+  }
+  if (ret == 0) {
+    if (!cont()) ret = -1;
+  }
   return (ret == 0);
 }
 
@@ -229,6 +236,9 @@ bool monitored_thread::grab_callback()
     return false;
   if ((code & 0xffff ) == 0x050f)   //0x0f05 is SYSCALL
   {
+    //indirect_backtrace(m_remote_context, regs.rip, regs.rbp, regs.rsp);
+    cont();
+    return true;
     ret = ptrace(PTRACE_SINGLESTEP, m_target, nullptr, nullptr);
     if (ret == 0)
     {
@@ -268,7 +278,7 @@ bool monitored_thread::grab_callback()
 
 void monitored_thread::set_remote_context(uint64_t remote_context)
 {
-  this->remote_context = remote_context;
+  this->m_remote_context = remote_context;
 }
 
 bool monitored_thread::pause(user_regs_struct& regs)
@@ -327,7 +337,7 @@ bool Manager::trace_thread_new(uint64_t& sc)
   return res;
 }
 
-bool Manager::dump_tree(uint64_t sc)
+bool Manager::dump_tree(pid_t tid)
 {
   uint64_t hit_count;
   uint64_t base_addr;
@@ -337,9 +347,9 @@ bool Manager::dump_tree(uint64_t sc)
   int8_t cmd = Agent::CMD_DUMP_TREE;
   bool res = false;
   //uint64_t sc_tmp;
-  printf("_a sc=%lx\n",sc);
+  printf("_a sc=%lx\n",tid);
   res = io.write(cmd);
-  if (res) res = io.write(sc);
+  if (res) res = io.write(tid);
 
   //bool res;
   uint32_t depth;
@@ -360,6 +370,46 @@ bool Manager::dump_tree(uint64_t sc)
   return res;
 }
 
+
+bool Manager::indirect_backtrace(uint64_t sc, uint64_t rip, uint64_t rbp, uint64_t rsp)
+{
+  bool res = false;
+  int8_t cmd = Agent::CMD_INDIRECT_BACKTRACE;
+  res = io.write(cmd);
+  printf("ib 1\n");
+  if (res) res = io.write(sc);
+  printf("ib 2\n");
+  if (res) res = io.write(rip);
+  printf("ib 3\n");
+  if (res) res = io.write(rbp);
+  printf("ib 4\n");
+  if (res) res = io.write(rsp);
+  printf("ib 5\n");
+  if (res) io.read(res);
+  printf("ib 6\n");
+  return res;
+}
+
+bool Manager::trace_attach(pid_t pid)
+{
+  bool res;
+  int8_t cmd = Agent::CMD_TRACE_ATTACH;
+  res = io.write(cmd);
+  printf("ta 1\n");
+  if (res) res = io.write(pid);
+  return res;
+
+}
+
+bool Manager::probe()
+{
+  bool res;
+  int8_t cmd = Agent::CMD_PROBE;
+  uint32_t confirm;
+  res = io.write(cmd);
+  if (res) res = io.read(confirm);
+  return res;
+}
 
 #if 0
 int

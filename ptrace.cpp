@@ -115,24 +115,48 @@ void _remote_return(uint64_t a, uint64_t b, uint64_t c);
 
 
 
-monitored_thread* xxxx;
-int xxxxcount{0};
-void empty_signal(int)
+monitored_thread* currently_interrupted_thread{0};
+std::atomic<uint32_t> wait_alarm_invoked{0};
+void wait_alarm_signal(int)
 {
-  printf("alarm\n");
-  xxxxcount++;
-  xxxx->signal_interrupt();
+  wait_alarm_invoked++;
+  monitored_thread* mt = currently_interrupted_thread;
+  if (mt)
+    mt->signal_interrupt();
+}
+
+std::vector<pid_t> tids;
+std::vector<monitored_thread> pts;
+std::atomic<uint32_t> backtrace_remains{0};
+sem_t backtrace_grab_finished;
+void child_func(int signo, siginfo_t * info, void * ctx)
+{
+  printf("signo=%d si_signo=%d si_code=%d si_pid=%d\n", signo, info->si_signo, info->si_code, info->si_pid);
+  if (info->si_code !=CLD_TRAPPED) return;
+  return;
+  size_t i;
+  for (i=0; i <tids.size(); i++)
+  {
+    if (tids[i] == info->si_pid) {
+      pts[i].grab_callback();
+      if( backtrace_remains.fetch_add(-1) == 1) {
+        sem_post(&backtrace_grab_finished);
+      }
+      break;
+    }
+  }
+  if (i == tids.size())
+  {
+    printf("unexpected child pid=%d\n",info->si_pid);
+  }
 }
 
 
 
-
-bool probe(Manager& mgr, std::vector<pid_t>& tids)
+bool probe(Manager& mgr)
 {
   long ret;
-  //probe_thread pt;
   printf("tids.size()=%d\n",tids.size());
-  std::vector<monitored_thread> pts;
   pts.resize(tids.size());
 
   int conn_fd;
@@ -140,81 +164,55 @@ bool probe(Manager& mgr, std::vector<pid_t>& tids)
   for (size_t i=0; i<tids.size(); i++)
   {
     if (res) res = pts[i].seize(tids[i]);
-    //for (auto& t : tids)
-    //{
-    //  if (res) res = pt.seize(t);
-    //}
   }
-  //if (!pt.seize(target_pid))
-  //  return false;
-  //Manager mgr;
+  sem_init(&backtrace_grab_finished,0,0);
+  signal(SIGALRM, wait_alarm_signal);
 
   std::vector<uint64_t> contexts;
   contexts.resize(tids.size());
   int wstatus;
-  //uint64_t context;
   for (size_t i=0; i<tids.size(); i++)
   {
     if (res) res = mgr.trace_thread_new(contexts[i]);
     if (res) pts[i].set_remote_context(contexts[i]);
   }
-  //if (!mgr.trace_thread_new(context))
-  //  return false;
-
-  //printf("probe 1 context=%lx\n",context);
-  //pt.set_remote_context(context);
   sleep(1);
 
-  printf("R2\n");
+  struct sigaction child_action;
+  child_action.sa_sigaction = child_func;
+  //child_action.sa_mask = 0;
+  sigemptyset(&child_action.sa_mask);
+  sigaddset(&child_action.sa_mask, SIGCHLD);
+  child_action.sa_flags = SA_RESTART | SA_SIGINFO;
+  //sigaction(SIGCHLD, &child_action, nullptr);
 
 
-  for (size_t i=0; i<tids.size(); i++)
-  {
-    //if (res) res = pts[i].signal_interrupt();
-  }
-//  if (! pt.signal_interrupt())
-//    return false;
-  printf("tids.size()=%d\n",tids.size());
   uint64_t time = 0;
   for (int iter=0;iter<1000;iter++)
   {
     res = true;
-    if ((iter%100) == 0)
-    std::cout << "it " << iter << "time=" << time/(double)1000000/iter << "ms " << xxxxcount << std::endl;
+    if ((iter%1) == 0)
+    std::cout << "it " << iter << "time=" << time/(double)1000000/iter << "ms " << std::endl;
 
-    usleep(5*1000);
+    usleep(50*1000);
 
     uint64_t start = - now();
+    struct itimerval timer{0,0,1,0}; //one second
+    //setitimer(ITIMER_REAL, &timer, nullptr);
+    //sleep(1);
+    backtrace_remains+=tids.size();
     for (size_t i = 0; i<tids.size(); i++)
     {
-#if 1
-      xxxx = &pts[i];
-      if (!pts[i].signal_interrupt())
-        printf("cannot interrupt!\n");
-      //if (!pts[i].signal_interrupt())
-      //    printf("cannot interrupt!\n");
-      struct itimerval curr_value;
-      struct itimerval new_value;
-      struct itimerval old_value;
-      getitimer(ITIMER_REAL, &curr_value);
-      curr_value.it_interval.tv_sec = 0;
-      curr_value.it_interval.tv_usec = 0;
-      curr_value.it_value.tv_sec = 3;
-      curr_value.it_value.tv_usec = 0;
-      setitimer(ITIMER_REAL,
-                &curr_value,
-                &old_value);
-      //char c[100];
-      //res = sleep(100);
-      //printf("res=%d errno=%d\n",res,errno);
-
-      //pid_t ppp = waitpid(tids[i], &wstatus, 0);
-      struct rusage rusage;
-      //printf("(%d) tids[i]=%d\n",xxxxcount.load(), tids[i]);
-      pid_t ppp = wait4(tids[i], &wstatus, 0, &rusage);
-      //printf("ppp=%d\n",ppp);
-
-      if (ppp == tids[i])
+      currently_interrupted_thread = &pts[i];
+      if (!pts[i].signal_interrupt()) {
+        assert(0 && "cannot interrupt");
+      }
+    }
+    //printf("sleepx\n");
+    //sleep(5);
+#if 0
+      pid_t pid = waitpid(tids[i], &wstatus, 0);
+      if (pid == tids[i])
       {
         if (WSTOPSIG(wstatus) == SIGTRAP)
         {
@@ -230,19 +228,60 @@ bool probe(Manager& mgr, std::vector<pid_t>& tids)
       }
       else
       {
-        std::cout << "!ppp" << std::endl;
-        abort();
+        assert(0 && "woke up on improper thread");
       }
-      //usleep(1*1000);
 #endif
-    }
+      while (backtrace_remains.load() != 0)
+      {
+        pid_t pid = waitpid(-1, &wstatus, WCONTINUED|WNOHANG|WUNTRACED);
+        if (pid == 0) continue;
+        size_t i;
+        printf("pid=%d\n",pid);
+        for (i=0; i <tids.size(); i++)
+        {
+          if (tids[i] == pid) {
+            if (WSTOPSIG(wstatus) == SIGTRAP)
+            {
+              bool b;
+              pts[i].read_regs();
+              b=mgr.indirect_backtrace(pts[i].m_remote_context, pts[i].regs.rip, pts[i].regs.rbp, pts[i].regs.rsp);
+              //b = pts[i].grab_callback();
+              assert(b);
+              pts[i].cont();
+            }
+            else
+            {
+              std::cout << "not SIGTRAP " << WSTOPSIG(wstatus) << std::endl;
+            }
+            backtrace_remains--;
+            break;
+          }
+        }
+        if (i == tids.size())
+        {
+          printf("unexpected child pid=%d\n",pid);
+        }
+      }
+      //sem_wait(&backtrace_grab_finished);
+
 
 
 
     start += now();
-   // std::cout << start/(double)1000000 << "ms" << std::endl;
+    std::cout << start/(double)1000000 << "ms" << std::endl;
     time += start;
   }
+  setitimer(ITIMER_REAL,
+            nullptr,
+            nullptr);
+  signal(SIGALRM, SIG_IGN);
+  sigaction(SIGCHLD, nullptr, nullptr);
+
+  for (size_t i=0; i<tids.size(); i++)
+  {
+    pts[i].detach();
+  }
+
 
   for (size_t i=0; i<tids.size(); i++)
   {
@@ -252,30 +291,43 @@ bool probe(Manager& mgr, std::vector<pid_t>& tids)
 }
 
 
+bool probe2(Manager& mgr)
+{
+  bool res = true;
+  long ret;
+  for (size_t i=0; i<tids.size(); i++)
+  {
+    if (res) res = mgr.trace_attach(tids[i]);
+  }
+  uint64_t time = 0;
+
+  for (int iter=0;iter<100000;iter++)
+  {
+    uint64_t start = -now();
+    res = true;
+    if ((iter%100) == 0)
+      std::cout << "it " << iter << "time=" << time/(double)1000000/iter << "ms " << std::endl;
+    res = mgr.probe();
+    start += now();
+    time += start;
+    usleep(20*1000);
+  }
+  for (size_t i=0; i<tids.size(); i++)
+  {
+    mgr.dump_tree(tids[i]);
+  }
+
+}
 
 
 
 
 
-
-
-
-
-
-int static_tid = 0;
-
-
-
-
-#define STACK_SIZE (1024 * 1024)
-void* locate_library(pid_t pid, const std::string& library_name);
 
 int main(int argc, char** argv)
 {
-  std::vector<pid_t> tids;
-
+  //std::vector<pid_t> tids;
   pid_t v;
-  signal(SIGALRM, empty_signal);
 #if 1
  //_wrapper();
 
@@ -297,7 +349,6 @@ int main(int argc, char** argv)
 
 #endif
 
-  printf("ADD=%lx\n", (uint64_t)locate_library(v,"agent.so"));
   Manager mgr;
   init_agent_interface(mgr, v);
   //int pid = atoi(argv[1]);
@@ -306,19 +357,12 @@ int main(int argc, char** argv)
   tid = v;
   //tid=pid;
   std::cout << "TID=" << tid << std::endl;
-  static_tid = 0;
-
-  probe(mgr, tids);
-
-  long ret = ptrace (PTRACE_INTERRUPT, tid, NULL, 0);
-  std::cout << "interrupt ret=" << ret << std::endl;
-  waitpid(tid, nullptr, 0);
 
 
+  //mgr.trace_attach(v);
+  //sleep(10);
+  probe2(mgr);
 
-  ret =
-  ptrace (PTRACE_DETACH, tid, NULL, 0);
-  std::cout << "detach ret=" << ret << std::endl;
 
   //std::cout << "backtrace_counter=" << backtrace_counter.load() << std::endl;
   //kill(tid, 15);
