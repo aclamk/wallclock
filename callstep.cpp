@@ -64,6 +64,7 @@ callstep* callstep::find_function(uint64_t ip_addr)
     base_addr = ip_addr - diff;
     callstep* cs = new callstep(name, base_addr);
     children.emplace(base_addr, cs);
+    cs->end_addr = ip_addr+1;
     cs->ip_addr = ip_addr;
     return cs;
   }
@@ -86,15 +87,15 @@ callstep* callstep::find_function(uint64_t ip_addr)
     base_addr = ip_addr - diff;
     if (base_addr == ch->second->base_addr)
     {
-      if (ch->second->end_addr < ip_addr)
+      if (ch->second->end_addr <= ip_addr)
       {
-        ch->second->end_addr = ip_addr;
+        ch->second->end_addr = ip_addr+1;
       }
       ch->second->ip_addr = ip_addr;
       return ch->second;
     }
     callstep* cs = new callstep(name, base_addr);
-    cs -> end_addr = ip_addr;
+    cs -> end_addr = ip_addr+1;
     cs -> ip_addr = ip_addr;
     children.emplace(base_addr, cs);
     return cs;
@@ -106,7 +107,7 @@ callstep* callstep::find_function(uint64_t ip_addr)
   uint64_t base_addr;
   base_addr = ip_addr - diff;
   callstep* cs = new callstep(name, base_addr);
-  cs -> end_addr = ip_addr;
+  cs -> end_addr = ip_addr+1;
   children.emplace(base_addr, cs);
   return cs;
 }

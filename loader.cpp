@@ -103,8 +103,14 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
    }
    usleep(500*1000);
    //Manager mgr;
+   int count = 0;
+   conn_fd = -1;
+   while (count < 100 && conn_fd ==-1)
+   {
    conn_fd = mgr.io.connect(unix_id);
    printf("conn_fd=%d\n",conn_fd);
+   count++;
+   }
    if (conn_fd == -1)
      return false;
 

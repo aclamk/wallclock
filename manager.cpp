@@ -21,7 +21,6 @@
 #include <unistd.h>
 #include <iostream>
 #include <string>
-
 #include "agent.h"
 
 int monitored_thread::inject_backtrace(user_regs_struct& regs)
@@ -86,8 +85,7 @@ int monitored_thread::inject_func(user_regs_struct& regs,
   regs.rsp -= 8;
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
-
-  regs.rip = agent_interface_remote._wc_inject;
+  regs.rip = agent_interface_remote._wc_inject + 2;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
   return ret;
@@ -157,6 +155,25 @@ bool monitored_thread::read_regs()
   return (ret == 0);
 }
 
+pid_t do_waitpid(pid_t pid, int* wstatus)
+{
+  pid_t wpid;
+  uint32_t sleep_time = 1;
+  uint32_t iter = 1;
+  do {
+    wpid = waitpid(pid, wstatus, WNOHANG);
+    if (wpid == 0) {
+      usleep(sleep_time);
+      sleep_time += iter;
+      iter++;
+    }
+  }
+  while ((wpid == 0) && (iter < 100));
+  return wpid;
+}
+
+
+
 bool monitored_thread::wait_return(uint64_t* arg1, uint64_t* arg2, uint64_t* arg3)
 {
   bool result = false;
@@ -168,9 +185,8 @@ bool monitored_thread::wait_return(uint64_t* arg1, uint64_t* arg2, uint64_t* arg
       break;
     }
     int wstatus;
-    if (!wait_stop(wstatus, regs)) {
+    if (do_waitpid(m_target, &wstatus) != m_target)
       break;
-    }
     if (WIFSTOPPED(wstatus) && ((WSTOPSIG(wstatus) & ~0x80) == (SIGTRAP | 0x00)))
     {
       ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
@@ -199,7 +215,7 @@ bool monitored_thread::wait_return(uint64_t* arg1, uint64_t* arg2, uint64_t* arg
 bool monitored_thread::wait_stop(int& wstatus, user_regs_struct& regs)
 {
   long ret;
-  pid_t ppp = waitpid(m_target, &wstatus, 0);
+  pid_t ppp = do_waitpid(m_target, &wstatus);
   if (ppp != m_target)
     return false;
   ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
@@ -211,12 +227,17 @@ bool monitored_thread::wait_stop(int& wstatus, user_regs_struct& regs)
     return false;
   if ((code & 0xffff) == 0x050f)   //0x0f05 is SYSCALL
   {
+    if (kill(m_target, SIGSTOP) != 0)
+      return false;
+    if (kill(m_target, SIGCONT) != 0)
+      return false;
     ret = ptrace(PTRACE_SINGLESTEP, m_target, nullptr, nullptr);
     if (ret != 0)
       return false;
-    waitpid(m_target, &wstatus, 0);
+    ppp = do_waitpid(m_target, &wstatus);
+    if (ppp != m_target)
+      return false;
     ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
-
     if (ret != 0)
       return false;
   }
@@ -285,7 +306,7 @@ bool monitored_thread::pause(user_regs_struct& regs)
 {
   if (!signal_interrupt())
     return false;
-  int wstatus;
+  int wstatus = 0;
   if (!wait_stop(wstatus, regs))
     return false;
   return true;
@@ -376,17 +397,11 @@ bool Manager::indirect_backtrace(uint64_t sc, uint64_t rip, uint64_t rbp, uint64
   bool res = false;
   int8_t cmd = Agent::CMD_INDIRECT_BACKTRACE;
   res = io.write(cmd);
-  printf("ib 1\n");
   if (res) res = io.write(sc);
-  printf("ib 2\n");
   if (res) res = io.write(rip);
-  printf("ib 3\n");
   if (res) res = io.write(rbp);
-  printf("ib 4\n");
   if (res) res = io.write(rsp);
-  printf("ib 5\n");
   if (res) io.read(res);
-  printf("ib 6\n");
   return res;
 }
 
@@ -395,7 +410,6 @@ bool Manager::trace_attach(pid_t pid)
   bool res;
   int8_t cmd = Agent::CMD_TRACE_ATTACH;
   res = io.write(cmd);
-  printf("ta 1\n");
   if (res) res = io.write(pid);
   return res;
 

@@ -32,7 +32,6 @@ public:
   callstep(std::string name, uint64_t base_addr)
     : name(name), base_addr(base_addr)
   {
-    end_addr=base_addr;
   }
 
   static std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);

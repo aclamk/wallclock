@@ -11,40 +11,49 @@
 #include <string>
 #include <stdlib.h>
 #include <iostream>
+#include <unistd.h>
+#include <sys/syscall.h>
 
 template <int depth, int x> struct do_log
 {
-  void log(void* cct);
+  int log(void* cct);
 };
 
-template <int x> struct do_log<12, x>
+template <int x> struct do_log<6, x>
 {
-  void log(void* cct);
+  int log(void* cct);
 };
 
-template<int depth, int x> void do_log<depth,x>::log(void* cct)
+template<int depth, int x> int do_log<depth,x>::log(void* cct)
 {
+  int result;
   if (rand() % 2) {
     do_log<depth+1, x*2> log;
-    log.log(cct);
+    result = log.log(cct);
   } else {
     do_log<depth+1, x*2+1> log;
-    log.log(cct);
+    result = log.log(cct);
   }
+  return result*x+depth;
 }
 
 std::string recursion(void* cct)
 {
-  return "here-recursion";
+  char p[100];
+  sprintf(p, "here-recursion tid=%d",syscall(SYS_gettid));
+  return p;//std::string("here-recursion") << syscall(SYS_gettid) << std::endl;;
 }
 
-template<int x> void do_log<12, x>::log(void* cct)
+template<int x> int do_log<6, x>::log(void* cct)
 {
-  if ((rand() % 16000) == 0) {
-    std::cout << "End " << recursion(cct) << "x=" << x << std::endl;
+  if ((rand() % 10) == 0) write(0,0,0);
+  if ((rand() % 100) == 0) usleep(3000);
+  if ((rand() % 160000) == 0) {
+    std::cout << "End " << recursion(cct) << " x=" << x << std::endl;
   } else {
     //std::cout << "End x=" << x << std::endl;
   }
+  return 42;
 }
 
 

@@ -23,7 +23,8 @@ class thread_sampling_ctx
 
 public:
   pid_t tid;
-  std::atomic<bool> lock{0};
+  std::atomic<bool> lock{false};
+  std::atomic<bool> notified{false};
   conveyor* conv{nullptr};
   callstep* root{nullptr};
   std::atomic<uint32_t> backtrace_injected{0};

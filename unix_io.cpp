@@ -56,14 +56,13 @@ int UnixIO::accept(int serv_fd)
       conn_fd = ::accept(serv_fd, (struct sockaddr *) &peer_addr, &peer_addr_size);
       if (conn_fd == -1)
       {
-        printf("errno=%d\n",errno);
         if (errno != EWOULDBLOCK)
           break;
         else
-          usleep(100*1000);
+          usleep(10*1000);
       }
       i++;
-    } while ((conn_fd == -1) && (i < 10));
+    } while ((conn_fd == -1) && (i < 100));
   }
 
   fcntl(serv_fd, F_SETFL, flags);

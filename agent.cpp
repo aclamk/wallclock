@@ -80,7 +80,6 @@ int backtrace_reader(void* arg);
 
 void R_init_agent()
 {
-  printf("R_init_agent\n");
   the_agent = Agent::create();//new agent;
   pid_t v;
   constexpr size_t stack_size = 1024 * 64;
@@ -89,7 +88,6 @@ void R_init_agent()
                  CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM,
             //CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID,
             the_agent, &v) == -1) {
-    perror("failed to spawn child task");
     _remote_return(0);
     return;
   }
@@ -421,6 +419,12 @@ bool Agent::ptrace_attach(pid_t pid)
   return ret;
 }
 
+uint64_t now()
+{
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return t.tv_sec*1000000000 + t.tv_nsec;
+}
 
 bool Agent::probe()
 {
@@ -431,19 +435,26 @@ bool Agent::probe()
     pid_t wpid;
     int wstatus;
     user_regs_struct regs;
-
+    uint64_t start = now();
     if (ret == 0)
     {
-      int cnt=0;
+      uint32_t sleep_time = 1;
+      uint32_t iter = 1;
       do {
-      wpid = waitpid(threads[i]->tid, &wstatus, WCONTINUED|WNOHANG|WUNTRACED);
+        wpid = waitpid(threads[i]->tid, &wstatus, WNOHANG);
+        if (wpid == 0) {
+          usleep(sleep_time);
+          sleep_time += iter;
+          iter++;
+        }
       }
-      while (cnt++<1000000 && wpid==0);
-      if(wpid==0)
-        printf("cannot stop thread %d\n", threads[i]->tid);
-      //printf("wpid=%d\n",wpid);
+      while ((wpid == 0) && (iter < 100));
+      if (wpid==0) {
+        //printf("cannot stop thread %d\n", threads[i]->tid);
+        continue;
+      }
       if (WSTOPSIG(wstatus) != SIGTRAP) {
-        printf("NOT SIGTRAP %d \n",WSTOPSIG(wstatus));
+        //printf("NOT SIGTRAP %d \n",WSTOPSIG(wstatus));
         ptrace(PTRACE_CONT, threads[i]->tid, 0, 0);
         continue;
       }
@@ -454,12 +465,21 @@ bool Agent::probe()
         {
           _get_backtrace(regs.rip, regs.rbp, regs.rsp, threads[i]);
         }
+        else
+        {
+          //printf("failed to PTRACE_GETREGS\n");
+        }
       }
-      ptrace(PTRACE_CONT, threads[i]->tid, 0, 0);
+      ret = ptrace(PTRACE_CONT, threads[i]->tid, 0, 0);
+    }
+    else
+    {
+      //printf("unsuccessfull stop of %d\n",threads[i]->tid);
     }
   }
   return true;
 }
+
 
 bool Agent::worker()
 {
@@ -472,7 +492,6 @@ bool Agent::worker()
   close(server_fd);
   printf("conn_fd = %d\n", conn_fd);
   //io->conn_fd = conn_fd;
-
 
   int r;
   bool do_continue = true;
@@ -495,7 +514,6 @@ bool Agent::worker()
         do_continue = false;
         break;
       }
-      //printf("cmd=%d\n",cmd);
       switch(cmd)
       {
         case CMD_TRACE_THREAD_NEW:
@@ -546,7 +564,7 @@ int Agent::worker(void* arg)
 {
   Agent* an_agent = (Agent*)arg;
   printf("subthread\n");
-  signal(SIGUSR1, empty_signal);
+  //signal(SIGUSR1, empty_signal);
   an_agent->worker();
   return 0;
 }
