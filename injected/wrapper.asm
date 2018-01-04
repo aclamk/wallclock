@@ -140,6 +140,8 @@ _wc_inject_backtrace_delayed:
 .globl _wc_inject
 .type _wc_inject, STT_FUNC
 _wc_inject:
+	nop
+	nop
 	push %rbp
 	push %rax
 	pushf
