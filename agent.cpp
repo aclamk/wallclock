@@ -45,13 +45,7 @@
 
 
 extern "C"
-void R_create_sampling_context();
-
-extern "C"
-void R_init_agent();
-
-extern "C"
-void R_print_peek(thread_sampling_ctx* sc);
+void _init_agent();
 
 extern "C"
 void _remote_return(uint64_t a=0, uint64_t b=0, uint64_t c=0);
@@ -78,7 +72,7 @@ pid_t agent_pid = -1;
 int backtrace_reader(void* arg);
 
 
-void R_init_agent()
+void _init_agent()
 {
   the_agent = Agent::create();//new agent;
   pid_t v;

@@ -23,49 +23,6 @@
 #include <string>
 #include "agent.h"
 
-int monitored_thread::inject_backtrace(user_regs_struct& regs)
-{
-  //make frame big enough to skip "scratch area"
-  //x86_64-abi section 3.2.2 The Stack Frame, declares sp+0 .. sp+128 as reserved
-  int ret;
-  regs.rsp -= (128 + 8);
-  ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)m_remote_context);
-  regs.rsp -= 8;
-  if (ret == 0)
-    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
-  regs.rip = agent_interface_remote._wc_inject_backtrace;
-  if (ret == 0)
-    ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
-  m_backtrace_inject_requests++;
-  return ret;
-}
-
-int monitored_thread::inject_backtrace(user_regs_struct& regs,
-                                        const user_regs_struct& previous_regs)
-{
-  int ret;
-  regs.rsp -= (128 + 8);
-  ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)previous_regs.rip);
-  regs.rsp -= 8;
-  if (ret == 0)
-    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)previous_regs.rbp);
-  regs.rsp -= 8;
-  if (ret == 0)
-    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)previous_regs.rsp);
-  regs.rsp -= 8;
-  if (ret == 0)
-    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)m_remote_context);
-  regs.rsp -= 8;
-  if (ret == 0)
-    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
-
-  regs.rip = agent_interface_remote._wc_inject_backtrace_delayed;
-  if (ret == 0)
-    ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
-  m_backtrace_inject_requests++;
-  return ret;
-}
-
 int monitored_thread::inject_func(user_regs_struct& regs,
                                        interruption_func func,
                                        uint64_t arg1, uint64_t arg2, uint64_t arg3)
@@ -245,62 +202,11 @@ bool monitored_thread::wait_stop(int& wstatus, user_regs_struct& regs)
 }
 
 
-bool monitored_thread::grab_callback()
-{
-  long ret;
-  ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
-  if (ret != 0)
-    return false;
-  errno = 0;
-  uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip-2), nullptr);
-  if (errno != 0)
-    return false;
-  if ((code & 0xffff ) == 0x050f)   //0x0f05 is SYSCALL
-  {
-    //indirect_backtrace(m_remote_context, regs.rip, regs.rbp, regs.rsp);
-    cont();
-    return true;
-    ret = ptrace(PTRACE_SINGLESTEP, m_target, nullptr, nullptr);
-    if (ret == 0)
-    {
-      int wstatus;
-      int rrr;
-      waitpid(m_target, &wstatus, 0);
-      user_regs_struct regs_as;
-      ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs_as);
-      if (ret == 0)
-      {
-        ret = inject_backtrace(regs_as, regs);
-      }
-    }
-    else
-    {
-      return false;
-    }
-  }
-  else
-  {
-    ret = 0;
-    if (regs.rip != agent_interface_remote._wc_inject_backtrace &&
-        regs.rip != agent_interface_remote._wc_inject_backtrace_delayed)
-    {
-      ret = inject_backtrace(regs);
-    }
-  }
-  if (ret == 0)
-  {
-    if (!cont())
-    {
-      ret = -1;
-    }
-  }
-  return (ret == 0);
-}
-
 void monitored_thread::set_remote_context(uint64_t remote_context)
 {
   this->m_remote_context = remote_context;
 }
+
 
 bool monitored_thread::pause(user_regs_struct& regs)
 {
@@ -311,8 +217,6 @@ bool monitored_thread::pause(user_regs_struct& regs)
     return false;
   return true;
 }
-
-
 
 
 bool monitored_thread::execute_remote(interruption_func* func,

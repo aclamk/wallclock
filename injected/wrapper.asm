@@ -1,18 +1,12 @@
 
 .data
-//.globl R_init_agent
-//.globl R_create_sampling_context
 
 .type agent_interface, STT_COMMON
 .globl agent_interface
 agent_interface:
 	.ascii "AGENTAPI" ;//sanity-check marker
+	.quad _init_agent
 	.quad _wc_inject
-	.quad _wc_inject_backtrace
-	.quad _wc_inject_backtrace_delayed
-	.quad R_init_agent
-	.quad R_create_sampling_context
-	.quad R_print_peek
 
 .text
 

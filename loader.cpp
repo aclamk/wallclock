@@ -76,12 +76,8 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
   int64_t diff = (uint64_t)remote_agent_so - (uint64_t)my_agent_so;
 
   agent_interface_remote = agent_interface;
+  agent_interface_remote._init_agent += diff;
   agent_interface_remote._wc_inject += diff;
-  agent_interface_remote._wc_inject_backtrace += diff;
-  agent_interface_remote._wc_inject_backtrace_delayed += diff;
-  agent_interface_remote.R_init_agent += diff;
-  agent_interface_remote.R_create_sampling_context += diff;
-  agent_interface_remote.R_print_peek += diff;
 
   long ret;
    monitored_thread pt;
@@ -96,7 +92,7 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
    int wstatus;
 
    uint64_t unix_id;
-   if (!pt.execute_remote((interruption_func*)agent_interface_remote.R_init_agent, &unix_id))
+   if (!pt.execute_remote((interruption_func*)agent_interface_remote._init_agent, &unix_id))
    {
      printf("failed to execute remote agent\n");
      return false;
