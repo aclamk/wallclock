@@ -243,24 +243,6 @@ bool connect_client(uint64_t socket_hash)
 }
 //bool trace_thread_new(pid_t pid, uint64_t& sc);
 
-bool Manager::trace_thread_new(uint64_t& sc)
-{
-  uint8_t cmd = Agent::CMD_TRACE_THREAD_NEW;
-  bool res = false;
-  uint64_t sc_tmp;
-  printf("_a\n");
-  if (io.write_bytes(&cmd, sizeof(uint8_t))) {
-    printf("_b\n");
-    if (io.read_bytes(&sc_tmp, sizeof(uint64_t)))
-    {
-      printf("_c\n");
-
-      sc = sc_tmp;
-      res = true;
-    }
-  }
-  return res;
-}
 
 bool Manager::dump_tree(pid_t tid)
 {
@@ -296,18 +278,6 @@ bool Manager::dump_tree(pid_t tid)
 }
 
 
-bool Manager::indirect_backtrace(uint64_t sc, uint64_t rip, uint64_t rbp, uint64_t rsp)
-{
-  bool res = false;
-  int8_t cmd = Agent::CMD_INDIRECT_BACKTRACE;
-  res = io.write(cmd);
-  if (res) res = io.write(sc);
-  if (res) res = io.write(rip);
-  if (res) res = io.write(rbp);
-  if (res) res = io.write(rsp);
-  if (res) io.read(res);
-  return res;
-}
 
 bool Manager::trace_attach(pid_t pid)
 {

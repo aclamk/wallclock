@@ -153,143 +153,6 @@ void child_func(int signo, siginfo_t * info, void * ctx)
 
 
 
-bool probe(Manager& mgr)
-{
-  long ret;
-  printf("tids.size()=%d\n",tids.size());
-  pts.resize(tids.size());
-
-  int conn_fd;
-  bool res = true;
-  for (size_t i=0; i<tids.size(); i++)
-  {
-    if (res) res = pts[i].seize(tids[i]);
-  }
-  sem_init(&backtrace_grab_finished,0,0);
-  signal(SIGALRM, wait_alarm_signal);
-
-  std::vector<uint64_t> contexts;
-  contexts.resize(tids.size());
-  int wstatus;
-  for (size_t i=0; i<tids.size(); i++)
-  {
-    if (res) res = mgr.trace_thread_new(contexts[i]);
-    if (res) pts[i].set_remote_context(contexts[i]);
-  }
-  sleep(1);
-
-  struct sigaction child_action;
-  child_action.sa_sigaction = child_func;
-  //child_action.sa_mask = 0;
-  sigemptyset(&child_action.sa_mask);
-  sigaddset(&child_action.sa_mask, SIGCHLD);
-  child_action.sa_flags = SA_RESTART | SA_SIGINFO;
-  //sigaction(SIGCHLD, &child_action, nullptr);
-
-
-  uint64_t time = 0;
-  for (int iter=0;iter<1000;iter++)
-  {
-    res = true;
-    if ((iter%1) == 0)
-    std::cout << "it " << iter << "time=" << time/(double)1000000/iter << "ms " << std::endl;
-
-    usleep(50*1000);
-
-    uint64_t start = - now();
-    struct itimerval timer{0,0,1,0}; //one second
-    //setitimer(ITIMER_REAL, &timer, nullptr);
-    //sleep(1);
-    backtrace_remains+=tids.size();
-    for (size_t i = 0; i<tids.size(); i++)
-    {
-      currently_interrupted_thread = &pts[i];
-      if (!pts[i].signal_interrupt()) {
-        assert(0 && "cannot interrupt");
-      }
-    }
-    //printf("sleepx\n");
-    //sleep(5);
-#if 0
-      pid_t pid = waitpid(tids[i], &wstatus, 0);
-      if (pid == tids[i])
-      {
-        if (WSTOPSIG(wstatus) == SIGTRAP)
-        {
-          bool b;
-          b = pts[i].grab_callback();
-          assert(b);
-        }
-        else
-        {
-          std::cout << "not SIGTRAP " << WSTOPSIG(wstatus) << std::endl;
-        }
-        //break;
-      }
-      else
-      {
-        assert(0 && "woke up on improper thread");
-      }
-#endif
-      while (backtrace_remains.load() != 0)
-      {
-        pid_t pid = waitpid(-1, &wstatus, WCONTINUED|WNOHANG|WUNTRACED);
-        if (pid == 0) continue;
-        size_t i;
-        printf("pid=%d\n",pid);
-        for (i=0; i <tids.size(); i++)
-        {
-          if (tids[i] == pid) {
-            if (WSTOPSIG(wstatus) == SIGTRAP)
-            {
-              bool b;
-              pts[i].read_regs();
-              b=mgr.indirect_backtrace(pts[i].m_remote_context, pts[i].regs.rip, pts[i].regs.rbp, pts[i].regs.rsp);
-              //b = pts[i].grab_callback();
-              assert(b);
-              pts[i].cont();
-            }
-            else
-            {
-              std::cout << "not SIGTRAP " << WSTOPSIG(wstatus) << std::endl;
-            }
-            backtrace_remains--;
-            break;
-          }
-        }
-        if (i == tids.size())
-        {
-          printf("unexpected child pid=%d\n",pid);
-        }
-      }
-      //sem_wait(&backtrace_grab_finished);
-
-
-
-
-    start += now();
-    std::cout << start/(double)1000000 << "ms" << std::endl;
-    time += start;
-  }
-  setitimer(ITIMER_REAL,
-            nullptr,
-            nullptr);
-  signal(SIGALRM, SIG_IGN);
-  sigaction(SIGCHLD, nullptr, nullptr);
-
-  for (size_t i=0; i<tids.size(); i++)
-  {
-    pts[i].detach();
-  }
-
-
-  for (size_t i=0; i<tids.size(); i++)
-  {
-    mgr.dump_tree(contexts[i]);
-  }
-  printf("dump end\n");
-}
-
 
 bool probe2(Manager& mgr)
 {
@@ -301,7 +164,7 @@ bool probe2(Manager& mgr)
   }
   uint64_t time = 0;
 
-  for (int iter=0;iter<100000;iter++)
+  for (int iter=0;iter<1000;iter++)
   {
     uint64_t start = -now();
     res = true;
@@ -309,8 +172,11 @@ bool probe2(Manager& mgr)
       std::cout << "it " << iter << "time=" << time/(double)1000000/iter << "ms " << std::endl;
     res = mgr.probe();
     start += now();
+    if (start > 10*1000*1000) {
+      std::cout << "iteration took " << start << " ns" << std::endl;
+    }
     time += start;
-    usleep(20*1000);
+    //usleep(20*1000);
   }
   for (size_t i=0; i<tids.size(); i++)
   {
