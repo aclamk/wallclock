@@ -45,6 +45,9 @@
 
 
 extern "C"
+void _init_wallclock();
+
+extern "C"
 void _init_agent();
 
 extern "C"
@@ -54,6 +57,14 @@ void _remote_return(uint64_t a=0, uint64_t b=0, uint64_t c=0);
 Agent::Agent()
 {
   sem_init(&wake_up, 0, 0);
+}
+
+Agent::~Agent()
+{
+  for(auto &i:this->threads)
+  {
+    delete(i);
+  }
 }
 
 Agent* Agent::create()
@@ -72,15 +83,15 @@ pid_t agent_pid = -1;
 int backtrace_reader(void* arg);
 
 
+constexpr size_t stack_size = 1024 * 64;
+char vstack[stack_size];
+
 void _init_agent()
 {
   the_agent = Agent::create();//new agent;
   pid_t v;
-  constexpr size_t stack_size = 1024 * 64;
-  char *vstack = (char*)malloc(stack_size);
   if (clone(Agent::worker, vstack + stack_size,
                  CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM,
-            //CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID,
             the_agent, &v) == -1) {
     _remote_return(0);
     return;
@@ -90,15 +101,13 @@ void _init_agent()
   _remote_return(111111);
 }
 
-void R_create_sampling_context()
+void _init_wallclock()
 {
-  printf("R_create_sampling_context\n");
-  thread_sampling_ctx* sc = thread_sampling_ctx::create();
-  printf("the_agent=%p sc=%p\n",the_agent, sc);
-  the_agent->add_thread(sc);
-  _remote_return((uint64_t)sc);
-  printf(">>>sc=%p\n",sc);
+  printf("INIT WALLCLOCK");
+  for(int i=0;i<100;i++)
+    printf("INIT %d\n",i);
 }
+
 
 extern "C" void grab_callstack(void);
 
@@ -237,6 +246,12 @@ thread_sampling_ctx::thread_sampling_ctx(size_t size)
   root = new callstep(std::string(), 0);
 }
 
+thread_sampling_ctx::~thread_sampling_ctx()
+{
+  delete conv;
+  delete root;
+}
+
 thread_sampling_ctx* thread_sampling_ctx::create()
 {
   thread_sampling_ctx* sc = new thread_sampling_ctx(16384);
@@ -303,31 +318,6 @@ bool thread_sampling_ctx::dump_tree(UnixIO& io)
 
 
 
-void R_print_peek(thread_sampling_ctx* sc)
-{
-  _remote_return(0);
-  printf("R_print_peek counter=%ld pfunc=%ld\n",sc->backtrace_collected.load(), sc->pfunc.load());
-  sc->root->print(0, std::cout);
-
-}
-
-
-
-
-
-bool Agent::trace_thread_new()
-{
-  printf("R_create_sampling_context\n");
-  thread_sampling_ctx* sc = thread_sampling_ctx::create();
-  printf("the_agent=%p sc=%p\n",the_agent, sc);
-  the_agent->add_thread(sc);
-  _remote_return((uint64_t)sc);
-  printf(">>>sc=%p\n",sc);
-
-  io.write_bytes(&sc,sizeof(sc));
-  return true;
-}
-
 bool Agent::dump_tree(thread_sampling_ctx* tsx)
 {
   tsx->dump_tree(io);
@@ -366,6 +356,7 @@ bool Agent::dump_tree()
   return res;
 }
 
+/*
 bool Agent::indirect_backtrace()
 {
   uint64_t tsx_bin;
@@ -385,6 +376,7 @@ bool Agent::indirect_backtrace()
   }
   return res;
 }
+*/
 
 bool Agent::trace_attach()
 {
@@ -411,6 +403,12 @@ bool Agent::ptrace_attach(pid_t pid)
   }
   printf("ATTACH %d res %d\n", pid, ret);
   return ret;
+}
+bool Agent::ptrace_detach(thread_sampling_ctx* sc)
+{
+  int res;
+  res = ptrace(PTRACE_SEIZE, sc->tid, 0, 0);
+  return res==0;
 }
 
 uint64_t now()
@@ -510,11 +508,12 @@ bool Agent::worker()
       }
       switch(cmd)
       {
+        /*
         case CMD_TRACE_THREAD_NEW:
           if (!trace_thread_new())
             do_continue = false;
           break;
-
+*/
         case CMD_TERMINATE:
           do_continue = false;
           break;
@@ -524,10 +523,12 @@ bool Agent::worker()
             do_continue = false;
           break;
 
+          /*
         case CMD_INDIRECT_BACKTRACE:
           if (!indirect_backtrace())
             do_continue = false;
           break;
+          */
         case CMD_TRACE_ATTACH:
           if (!trace_attach())
             do_continue = false;
@@ -545,21 +546,17 @@ bool Agent::worker()
     }
   }
   printf("Agent exited\n");
+  close(conn_fd);
   return true;
-}
-
-
-void empty_signal(int)
-{
 }
 
 
 int Agent::worker(void* arg)
 {
   Agent* an_agent = (Agent*)arg;
-  printf("subthread\n");
-  //signal(SIGUSR1, empty_signal);
   an_agent->worker();
+  delete an_agent;
+  syscall(SYS_exit, 0);
   return 0;
 }
 

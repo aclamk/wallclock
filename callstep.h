@@ -33,7 +33,7 @@ public:
     : name(name), base_addr(base_addr)
   {
   }
-
+  ~callstep();
   static std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);
 
   callstep* find_function(uint64_t ip_addr);

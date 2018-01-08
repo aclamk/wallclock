@@ -12,6 +12,15 @@
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
 
+callstep::~callstep()
+{
+  for(auto &i:children)
+  {
+    delete(i.second);
+  }
+}
+
+
 std::pair<std::string, int64_t> callstep::get_symbol(uint64_t ip_addr)
 {
   struct unw_helper

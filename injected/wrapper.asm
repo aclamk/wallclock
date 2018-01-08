@@ -8,7 +8,14 @@ agent_interface:
 	.quad _init_agent
 	.quad _wc_inject
 
+//_init_wallclock must be first function in .text
 .text
+.protected _init_wallclock
+	jmp _init_wallclock
+
+//.globl __tls_get_addr
+//__tls_get_addr:
+//	ret
 
 .protected _get_backtrace
 
