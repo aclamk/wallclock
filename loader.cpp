@@ -80,39 +80,36 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
   agent_interface_remote._wc_inject += diff;
 
   long ret;
-   monitored_thread pt;
-   int conn_fd;
-   if (! pt.seize(remote))
-   {
-     printf("failed to seize control over target\n");
-     return false;
-   }
-   sleep(1);
-   user_regs_struct regs;
-   int wstatus;
+  monitored_thread pt;
+  int conn_fd;
+  if (! pt.seize(remote))
+  {
+    std::cerr << "Target " << remote << " cannot be sized" << std::endl;
+    return false;
+  }
+  user_regs_struct regs;
+  int wstatus;
+  uint64_t unix_id;
+  if (!pt.execute_remote((interruption_func*)agent_interface_remote._init_agent, &unix_id))
+  {
+    printf("failed to execute remote agent\n");
+    return false;
+  }
+  usleep(100*1000);
+  int count = 0;
+  conn_fd = -1;
+  while (count < 100 && conn_fd ==-1)
+  {
+    conn_fd = mgr.io.connect(unix_id);
+    printf("conn_fd=%d\n",conn_fd);
+    count++;
+  }
+  if (conn_fd == -1)
+    return false;
 
-   uint64_t unix_id;
-   if (!pt.execute_remote((interruption_func*)agent_interface_remote._init_agent, &unix_id))
-   {
-     printf("failed to execute remote agent\n");
-     return false;
-   }
-   usleep(500*1000);
-   //Manager mgr;
-   int count = 0;
-   conn_fd = -1;
-   while (count < 100 && conn_fd ==-1)
-   {
-   conn_fd = mgr.io.connect(unix_id);
-   printf("conn_fd=%d\n",conn_fd);
-   count++;
-   }
-   if (conn_fd == -1)
-     return false;
-
-   if (!pt.detach())
-     return false;
-   return true;
+  if (!pt.detach())
+    return false;
+  return true;
 }
 
 

@@ -24,21 +24,17 @@ public:
   template <typename T>
   bool read(T& data) {
     static_assert(std::is_trivial<T>::value,"");
-    return read_bytes(&data, sizeof(T));
+    bool res = read_bytes(&data, sizeof(T));
+    //printf("read res=%d size=%d %ld\n",res, sizeof(T), (long long)data);
+    return res;
   }
   template <typename T>
   bool write(const T& data) {
     static_assert(std::is_trivial<T>::value,"");
-    return write_bytes(&data, sizeof(T));
+    bool res = write_bytes(&data, sizeof(T));
+    //printf("write res=%d size=%d %ld\n",res, sizeof(T), (long long)data);
+    return res;
   }
-  /*
-  bool read(uint16_t& data);
-  bool write(uint16_t data);
-  bool read(uint32_t& data);
-  bool write(uint32_t data);
-  bool read(uint64_t& data);
-  bool write(uint64_t data);
-*/
   bool read(std::string& s);
   bool write(const std::string& s);
 

@@ -254,7 +254,7 @@ bool Manager::dump_tree(pid_t tid)
   int8_t cmd = Agent::CMD_DUMP_TREE;
   bool res = false;
   //uint64_t sc_tmp;
-  printf("_a sc=%lx\n",tid);
+  printf("_a sc=%d\n",tid);
   res = io.write(cmd);
   if (res) res = io.write(tid);
 
@@ -262,7 +262,7 @@ bool Manager::dump_tree(pid_t tid)
   uint32_t depth;
   do
   {
-    res = io.read(depth);
+    if (res) res = io.read(depth);
     if (res && depth != 0xffffffff) {
       //if (res) res = io.read(base_addr);
       if (res) res = io.read(name);

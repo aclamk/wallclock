@@ -1,4 +1,4 @@
-all: ptrace testprog callstep.o loader.o agent.so
+all: wallclock testprog callstep.o loader.o agent.so 
 
 .phony: libunwind liblzma
 
@@ -42,7 +42,8 @@ agent: agent.o Makefile wrapper.o callstep.o unix_io.o libunwind liblzma
 	/usr/lib/x86_64-linux-gnu/libpthread.a \
 	/usr/lib/gcc/x86_64-linux-gnu/6/libgcc_eh.a \
 	$(LIBUNWIND) $(LIBLZMA) \
-	-Wl,--end-group 
+	-Wl,--end-group
+
 
 agent.so: agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
 	g++ -shared -Wl,-export-dynamic -Wl,-soname,agent.so \
@@ -70,7 +71,6 @@ loader.o: loader.cpp
 unix_io.o: unix_io.cpp
 	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
 
-
 callstep.o: callstep.cpp
 	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
 
@@ -84,15 +84,12 @@ largecode.o: largecode.cpp
 testprog: testprog.cpp largecode.o
 	g++ $^ -o $@ -lpthread
 
-#tightloop: tightloop.cpp
-#	g++ tightloop.cpp -o tightloop
-
 ptrace.o: ptrace.cpp
 	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
 	
 #wrapper.o 	
-ptrace: ptrace.o callstep.o agent.so manager.o loader.o unix_io.o
-	g++ -o ptrace $^ -lpthread -lunwind 
+wallclock: ptrace.o callstep.o agent.so manager.o loader.o unix_io.o
+	g++ -o $@ $^ -lpthread -lunwind 
 	
 	
 #g++ agent.cpp -fPIE -static -fno-stack-protector -O0 -pie -nostdlib -T script

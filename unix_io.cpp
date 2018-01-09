@@ -103,24 +103,49 @@ int UnixIO::wait_read()
   fds.fd = conn_fd;
   fds.events = POLLIN;
   int r;
-  r = poll(&fds, 1, 100);
-  if (r == -1)
+  do {
+    r = poll(&fds, 1, 100);
+  } while (r == -1 && errno == EINTR);
+  if (r == -1) {
     r = -errno;
+  }
   return r;
 }
 
 bool UnixIO::read_bytes(void* ptr, size_t size)
 {
+  size_t cnt = 0;
   int res;
-  res = ::read(conn_fd, ptr, size);
-  return res == size;
+  do {
+    res = ::read(conn_fd, (char*)ptr + cnt, size - cnt);
+    if (res == -1) {
+      printf("read res=%d errno=%d\n",res,errno);
+      if (errno == EINTR) continue;
+      return false;
+    }
+    if (res == 0)
+      return false;
+    cnt = cnt + res;
+  } while (res != size);
+  return true;
 }
 
 bool UnixIO::write_bytes(const void* ptr, size_t size)
 {
+  size_t cnt = 0;
   int res;
-  res = ::write(conn_fd, ptr, size);
-  return res == size;
+  do {
+    res = ::write(conn_fd, (char*)ptr + cnt, size - cnt);
+    if (res == -1) {
+      printf("write res=%d errno=%d\n",res,errno);
+      if (errno == EINTR) continue;
+      return false;
+    }
+    if (res == 0)
+      return false;
+    cnt = cnt + res;
+  } while (res != size);
+  return true;
 }
 
 bool UnixIO::read(std::string& s)
@@ -128,9 +153,14 @@ bool UnixIO::read(std::string& s)
   bool res = false;
   uint16_t size;
   if (read(size)) {
-    char str[size];
-    if (read_bytes(str, size)) {
-      s = std::string(str, size);
+    if(size > 0) {
+      char str[size];
+      if (read_bytes(str, size)) {
+        s = std::string(str, size);
+        res = true;
+      }
+    } else {
+      s.clear();
       res = true;
     }
   }
@@ -142,10 +172,15 @@ bool UnixIO::write(const std::string& s)
   bool res = false;
   uint16_t size = s.size();
   if (write(size)) {
-    if (write_bytes(s.c_str(), size))
+    if(size>0)
     {
-      res = true;
+      if (write_bytes(s.c_str(), size))
+      {
+        res = true;
+      }
     }
+    else
+      res = true;
   }
   return res;
 }

@@ -56,13 +56,13 @@ void _remote_return(uint64_t a=0, uint64_t b=0, uint64_t c=0);
 
 Agent::Agent()
 {
-  sem_init(&wake_up, 0, 0);
 }
 
 Agent::~Agent()
 {
-  for(auto &i:this->threads)
+  for(auto &i:threads)
   {
+    ptrace_detach(i->tid);
     delete(i);
   }
 }
@@ -161,14 +161,9 @@ public:
 
 //private:
 public:
-  enum {
-    notified_none = 0,
-    notified_signalled = 1,
-  };
   size_t size{4096};
   std::atomic<size_t> produced{0};
   size_t consumed{0};
-  std::atomic<uint8_t> notified{notified_none};
   uint64_t* ip_table;
 };
 
@@ -223,6 +218,7 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
       conv->advance(count);
       sc->backtrace_collected++;
     }
+#if 0
     if (conv->produce_avail() < conv->size/2)
     {
       //make sure reader is notified
@@ -234,7 +230,7 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
         syscall(SYS_tkill, agent_pid, SIGUSR1);
       }
     }
-
+#endif
     local_assert(sc->lock.exchange(false) == true);
   }
   //printf("get_backtrace end \n");
@@ -297,12 +293,7 @@ void thread_sampling_ctx::consume()
 
 void thread_sampling_ctx::peek()
 {
-  //printf("PEEK this=%p\n", this);
-  if (conv->notified_signalled == conv->notified.exchange(conv->notified_signalled))
-  {
-    consume();
-    local_assert(conv->notified_signalled == conv->notified.exchange(conv->notified_none));
-  }
+  consume();
 }
 
 
@@ -331,15 +322,12 @@ bool Agent::dump_tree()
   if (io.read(tid))
   {
     size_t i=0;
-    printf("tid=%d\n",tid);
     for (i=0;i<threads.size();i++)
     {
       if (threads[i]->tid == tid) break;
     }
-    printf("index=%d\n",i);
     local_assert (i != threads.size());
     thread_sampling_ctx* tsx = threads[i];
-    printf("tsx = %p\n",tsx);
     tsx -> consume();
     uint32_t depth=0;
     res = io.write(depth);
@@ -355,28 +343,6 @@ bool Agent::dump_tree()
   }
   return res;
 }
-
-/*
-bool Agent::indirect_backtrace()
-{
-  uint64_t tsx_bin;
-  bool res = false;
-  printf("Agent::indirect_backtrace\n");
-  if (io.read_bytes(&tsx_bin, sizeof(uint64_t)))
-  {
-    thread_sampling_ctx* tsx = (thread_sampling_ctx*)tsx_bin;
-    uint64_t rip;
-    uint64_t rbp;
-    uint64_t rsp;
-    res = io.read(rip);
-    if (res) res = io.read(rbp);
-    if (res) res = io.read(rsp);
-    if (res) _get_backtrace(rip, rbp, rsp, tsx);
-    if (res) res = io.write(res);
-  }
-  return res;
-}
-*/
 
 bool Agent::trace_attach()
 {
@@ -396,18 +362,17 @@ bool Agent::ptrace_attach(pid_t pid)
   res = ptrace(PTRACE_SEIZE, pid, 0, 0);
   if (res == 0) {
     thread_sampling_ctx* sc = thread_sampling_ctx::create();
-    printf("the_agent=%p sc=%p\n",the_agent, sc);
     sc->tid = pid;
     add_thread(sc);
     ret = true;
   }
-  printf("ATTACH %d res %d\n", pid, ret);
   return ret;
 }
-bool Agent::ptrace_detach(thread_sampling_ctx* sc)
+
+bool Agent::ptrace_detach(pid_t pid)
 {
   int res;
-  res = ptrace(PTRACE_SEIZE, sc->tid, 0, 0);
+  res = ptrace(PTRACE_DETACH, pid, 0, 0);
   return res==0;
 }
 
@@ -482,8 +447,6 @@ bool Agent::worker()
   printf("server_fd=%d\n",server_fd);
   conn_fd = io.accept(server_fd);
   close(server_fd);
-  printf("conn_fd = %d\n", conn_fd);
-  //io->conn_fd = conn_fd;
 
   int r;
   bool do_continue = true;
@@ -508,12 +471,6 @@ bool Agent::worker()
       }
       switch(cmd)
       {
-        /*
-        case CMD_TRACE_THREAD_NEW:
-          if (!trace_thread_new())
-            do_continue = false;
-          break;
-*/
         case CMD_TERMINATE:
           do_continue = false;
           break;
@@ -522,13 +479,6 @@ bool Agent::worker()
           if (!dump_tree())
             do_continue = false;
           break;
-
-          /*
-        case CMD_INDIRECT_BACKTRACE:
-          if (!indirect_backtrace())
-            do_continue = false;
-          break;
-          */
         case CMD_TRACE_ATTACH:
           if (!trace_attach())
             do_continue = false;
@@ -545,7 +495,6 @@ bool Agent::worker()
       }
     }
   }
-  printf("Agent exited\n");
   close(conn_fd);
   return true;
 }
