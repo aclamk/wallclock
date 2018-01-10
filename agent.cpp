@@ -33,7 +33,6 @@
 #include <fcntl.h>
 
 #include <poll.h>
-#define _GNU_SOURCE
 #include <unistd.h>
 #include <sys/syscall.h>
 #define local_assert(x) do { if(!(x)) *(char*)nullptr=0; } while(false)
@@ -329,18 +328,30 @@ bool Agent::dump_tree()
     local_assert (i != threads.size());
     thread_sampling_ctx* tsx = threads[i];
     tsx -> consume();
-#if 0
-    uint32_t depth=0;
-    res = io.write(depth);
-    if (res) res = io.write(std::string("injection cnt"));
-    uint64_t count = tsx->backtrace_injected.load();
-    if (res) res = io.write(count);
-    res = io.write(depth);
-    if (res) res = io.write(std::string("collected cnt"));
-    count = tsx->backtrace_collected.load();
-    if (res) res = io.write(count);
-#endif
-    res = dump_tree((thread_sampling_ctx*)tsx);
+
+    //cat /proc/8805/stat
+    int name;
+    int f;
+    int s;
+    char fname[25];
+    char stat[100];
+    sprintf(fname, "/proc/%d/stat", tid);
+    f = open(fname, O_RDONLY);
+    s = read(f, stat, 99);
+    close(f);
+    if (s >= 0) stat[s] = 0;
+    char *pb, *pe;
+    pb = strchr(stat, '(');
+    pe = strchr(pb, ')');
+    std::string tid_name;
+    if (pb && pe)
+    {
+      tid_name = std::string(pb + 1, pe - pb - 1);
+    }
+    res = io.write(tid_name);
+    if (res) res = io.write(tsx->root->hit_count);
+    if (res) res = io.write(tsx->time_suspended);
+    if (res) res = dump_tree(tsx);
   }
   return res;
 }
@@ -389,11 +400,11 @@ bool Agent::probe()
   for (size_t i = 0; i<threads.size(); i++)
   {
     int ret;
+    uint64_t start = now();
     ret = ptrace(PTRACE_INTERRUPT, threads[i]->tid, 0, 0);
     pid_t wpid;
     int wstatus;
     user_regs_struct regs;
-    uint64_t start = now();
     if (ret == 0)
     {
       uint32_t sleep_time = 1;
@@ -434,6 +445,7 @@ bool Agent::probe()
     {
       //printf("unsuccessfull stop of %d\n",threads[i]->tid);
     }
+    threads[i]->time_suspended += (now() - start);
   }
   return true;
 }

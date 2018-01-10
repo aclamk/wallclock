@@ -250,7 +250,7 @@ bool Manager::dump_tree(pid_t tid)
 {
   uint64_t hit_count;
   uint64_t total_samples;
-  uint64_t base_addr;
+  uint64_t time_suspended;
   //uint64_t end_addr;
   //uint64_t ip_addr;
   std::string name;
@@ -259,21 +259,27 @@ bool Manager::dump_tree(pid_t tid)
   //uint64_t sc_tmp;
   res = io.write(cmd);
   if (res) res = io.write(tid);
+
+  std::string tid_name;
+  res = io.read(tid_name);
+  if (res) res = io.read(total_samples);
+  if (res) res = io.read(time_suspended);
+  std::cout << "Thread: " << tid << " (" << tid_name << ") - " << total_samples << " samples, time suspended=" <<
+      time_suspended/(1000*1000) << "ms" << std::endl;
+  std::cout << std::endl;
   std::vector<uint32_t> depths;
   depths.resize(1);
   depths[0] = 1;
-  //bool res;
+
   uint32_t depth;
   do
   {
     if (res) res = io.read(depth);
     if (res && depth != 0xffffffff) {
-      //if (res) res = io.read(base_addr);
       if (res) res = io.read(name);
       if (res) res = io.read(hit_count);
       uint32_t child_count;// = children.size();
       if (res) res = io.read(child_count);
-      //printf("child_count %d\n",child_count);
       if(depth <= depths.size())
         depths.resize(depth+1);
       depths[depth] = child_count;
@@ -293,22 +299,16 @@ bool Manager::dump_tree(pid_t tid)
         int     status;
         char   *realname;
 
-        // exception classes not in <stdexcept>, thrown by the implementation
-        // instead of the user
-        std::bad_exception  e;
         realname = abi::__cxa_demangle(name.c_str(), 0, 0, &status);
-
-        //printf("status=%d name=%s realname=%s\n", status,name.c_str(), realname);
-        std::cout /*<< std::string(depth*2, ' ')*/ << "+ " <<
-            str << "% " << (status == 0 ? realname : name.c_str()) /*<< " " << hit_count*/ << std::endl;
+        std::cout << "+ " << str << "% " <<
+            (status == 0 ? realname : name.c_str()) << std::endl;
         free(realname);
         depths[depth - 1]--;
       }
-      else
-        total_samples = hit_count;
     }
   }
   while (res && depth != 0xffffffff);
+  std::cout << std::endl;
   return res;
 }
 

@@ -31,6 +31,7 @@ public:
   std::atomic<uint32_t> backtrace_injected{0};
   std::atomic<uint32_t> backtrace_collected{0};
   std::atomic<uint64_t> pfunc{0};
+  uint64_t time_suspended{0};
   /*creates sampling context for calling thread*/
   static thread_sampling_ctx* create();
   void peek();
