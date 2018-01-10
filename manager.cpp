@@ -243,20 +243,15 @@ bool connect_client(uint64_t socket_hash)
 
   return false;
 }
-//bool trace_thread_new(pid_t pid, uint64_t& sc);
-
 
 bool Manager::dump_tree(pid_t tid)
 {
   uint64_t hit_count;
   uint64_t total_samples;
   uint64_t time_suspended;
-  //uint64_t end_addr;
-  //uint64_t ip_addr;
   std::string name;
   int8_t cmd = Agent::CMD_DUMP_TREE;
   bool res = false;
-  //uint64_t sc_tmp;
   res = io.write(cmd);
   if (res) res = io.write(tid);
 
@@ -268,8 +263,6 @@ bool Manager::dump_tree(pid_t tid)
       time_suspended/(1000*1000) << "ms" << std::endl;
   std::cout << std::endl;
   std::vector<uint32_t> depths;
-  depths.resize(1);
-  depths[0] = 1;
 
   uint32_t depth;
   do
@@ -312,8 +305,6 @@ bool Manager::dump_tree(pid_t tid)
   return res;
 }
 
-
-
 bool Manager::trace_attach(pid_t pid)
 {
   bool res;
@@ -321,7 +312,6 @@ bool Manager::trace_attach(pid_t pid)
   res = io.write(cmd);
   if (res) res = io.write(pid);
   return res;
-
 }
 
 bool Manager::probe()

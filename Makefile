@@ -15,6 +15,9 @@ liblzma/src/liblzma/.libs/liblzma.a:
 	make -C liblzma
 	
 LIBLZMA = liblzma/src/liblzma/.libs/liblzma.a
+
+GCC_VERSION:=$(shell gcc -dumpversion)
+GCC_MACHINE:=$(shell gcc -dumpmachine)
 	
 OBJS = \
 	wrapper.o \
@@ -28,6 +31,7 @@ OBJS = \
 	agent.so
 
 clean:
+	echo $(GCC_MACHINE) $(GCC_VERSION)
 	rm -f $(OBJS)
 wrapper.o: injected/wrapper.asm
 	as -c $< -o $@
@@ -49,50 +53,38 @@ agent.so: agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
 	g++ -shared -Wl,-export-dynamic -Wl,-soname,agent.so \
     -o agent.so agent.o wrapper.o callstep.o unix_io.o \
     $(LIBUNWIND) $(LIBLZMA) -pthread
-     #~/liblzma/src/liblzma/.libs/liblzma.a
-    #/usr/lib/x86_64-linux-gnu/libunwind.a ~/liblzma/src/liblzma/.libs/liblzma.so 
-    #-nostdlib /usr/lib/x86_64-linux-gnu/libc.a /usr/lib/gcc/x86_64-linux-gnu/6/libstdc++.a /usr/lib/x86_64-linux-gnu/libpthread.a /usr/lib/gcc/x86_64-linux-gnu/6/libgcc_eh.a /usr/lib/x86_64-linux-gnu/libunwind.a ~/liblzma/src/liblzma/.libs/liblzma.a
-    
-#-Wl,--unresolved-symbols=ignore-all
 
-#-fno-stack-protector 
-# -nostdlib 
-#/usr/lib/x86_64-linux-gnu/libunwind-x86_64.a
-	
-#g++ -c $< -o $@
-MYOPTS = -fno-omit-frame-pointer
-# -fno-exceptions
+#WC_OPTS = -fno-omit-frame-pointer 
+WC_OPTS = -O3
+
 manager.o: manager.cpp
-	g++ -c $< -o $@ $(MYOPTS) -O3 -g
-
+	g++ -c $< -o $@ $(WC_OPTS) 
+	
 loader.o: loader.cpp
-	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
+	g++ -c $< -o $@ $(WC_OPTS) -fPIC
 
 unix_io.o: unix_io.cpp
-	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
+	g++ -c $< -o $@ $(WC_OPTS) -fPIC
 
 callstep.o: callstep.cpp
-	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
+	g++ -c $< -o $@ $(WC_OPTS) -fPIC
 
 agent.o: agent.cpp
-	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
+	g++ -c $< -o $@ $(WC_OPTS) -fPIC
 
 largecode.o: largecode.cpp
-	g++ -c $< -o $@ $(MYOPTS) -O1 -g
+	g++ -c $< -o $@ $(WC_OPTS)
 
 
 testprog: testprog.cpp largecode.o
 	g++ $^ -o $@ -lpthread
 
 wallclock.o: wallclock.cpp
-	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
+	g++ -c $< -o $@ $(WC_OPTS) -fPIC
 	
-#wrapper.o 	
 wallclock: wallclock.o callstep.o agent.so manager.o loader.o unix_io.o
 	g++ -o $@ $^ -lpthread -lunwind 
 	
 	
-#g++ agent.cpp -fPIE -static -fno-stack-protector -O0 -pie -nostdlib -T script
-
 
 	
