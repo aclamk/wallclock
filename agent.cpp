@@ -329,6 +329,7 @@ bool Agent::dump_tree()
     local_assert (i != threads.size());
     thread_sampling_ctx* tsx = threads[i];
     tsx -> consume();
+#if 0
     uint32_t depth=0;
     res = io.write(depth);
     if (res) res = io.write(std::string("injection cnt"));
@@ -338,7 +339,7 @@ bool Agent::dump_tree()
     if (res) res = io.write(std::string("collected cnt"));
     count = tsx->backtrace_collected.load();
     if (res) res = io.write(count);
-
+#endif
     res = dump_tree((thread_sampling_ctx*)tsx);
   }
   return res;

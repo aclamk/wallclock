@@ -160,7 +160,8 @@ bool callstep::dump_tree(uint32_t depth, UnixIO& io)
   //io.write(base_addr);
   if (res) res = io.write(name);
   if (res) res = io.write(hit_count);
-
+  uint32_t child_count = children.size();
+  if (res) res = io.write(child_count);
   if (res) {
     uint64_t last=0;
     for (auto &i: children)

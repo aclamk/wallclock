@@ -92,7 +92,7 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
   uint64_t unix_id;
   if (!pt.execute_remote((interruption_func*)agent_interface_remote._init_agent, &unix_id))
   {
-    printf("failed to execute remote agent\n");
+    std::cerr << "failed to execute remote agent" << std::endl;
     return false;
   }
   usleep(100*1000);
@@ -101,7 +101,6 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
   while (count < 100 && conn_fd ==-1)
   {
     conn_fd = mgr.io.connect(unix_id);
-    printf("conn_fd=%d\n",conn_fd);
     count++;
   }
   if (conn_fd == -1)

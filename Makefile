@@ -23,7 +23,7 @@ OBJS = \
 	callstep.o \
 	agent.o \
 	largecode.o \
-	ptrace.o \
+	wallclock.o \
 	unix_io.o \
 	agent.so
 
@@ -84,11 +84,11 @@ largecode.o: largecode.cpp
 testprog: testprog.cpp largecode.o
 	g++ $^ -o $@ -lpthread
 
-ptrace.o: ptrace.cpp
+wallclock.o: wallclock.cpp
 	g++ -c $< -o $@ $(MYOPTS) -O3 -g -fPIC
 	
 #wrapper.o 	
-wallclock: ptrace.o callstep.o agent.so manager.o loader.o unix_io.o
+wallclock: wallclock.o callstep.o agent.so manager.o loader.o unix_io.o
 	g++ -o $@ $^ -lpthread -lunwind 
 	
 	

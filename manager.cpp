@@ -20,7 +20,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <iostream>
+#include <iomanip>
 #include <string>
+#include <cxxabi.h>
 #include "agent.h"
 
 int monitored_thread::inject_func(user_regs_struct& regs,
@@ -247,6 +249,7 @@ bool connect_client(uint64_t socket_hash)
 bool Manager::dump_tree(pid_t tid)
 {
   uint64_t hit_count;
+  uint64_t total_samples;
   uint64_t base_addr;
   //uint64_t end_addr;
   //uint64_t ip_addr;
@@ -254,10 +257,11 @@ bool Manager::dump_tree(pid_t tid)
   int8_t cmd = Agent::CMD_DUMP_TREE;
   bool res = false;
   //uint64_t sc_tmp;
-  printf("_a sc=%d\n",tid);
   res = io.write(cmd);
   if (res) res = io.write(tid);
-
+  std::vector<uint32_t> depths;
+  depths.resize(1);
+  depths[0] = 1;
   //bool res;
   uint32_t depth;
   do
@@ -267,10 +271,41 @@ bool Manager::dump_tree(pid_t tid)
       //if (res) res = io.read(base_addr);
       if (res) res = io.read(name);
       if (res) res = io.read(hit_count);
+      uint32_t child_count;// = children.size();
+      if (res) res = io.read(child_count);
+      //printf("child_count %d\n",child_count);
+      if(depth <= depths.size())
+        depths.resize(depth+1);
+      depths[depth] = child_count;
 
-      std::cout << std::string(depth*2, ' ') << " " << name << " " << hit_count << std::endl;
-      //out << std::hex << base_addr << std::dec << " " << name << " " << hit_count << " ip=" << std::hex << ip_addr-base_addr << std::dec << "\n";
+      if(depth > 0)
+      {
+        for(size_t i = 0; i < depth - 1; i++)
+        {
+          if (depths[i] == 0)
+            std::cout << "  ";
+          else
+            std::cout << "| ";
+        }
+        double d = hit_count * 100. / total_samples;
+        char str[10];
+        sprintf(str, "%2.2lf",d);
+        int     status;
+        char   *realname;
 
+        // exception classes not in <stdexcept>, thrown by the implementation
+        // instead of the user
+        std::bad_exception  e;
+        realname = abi::__cxa_demangle(name.c_str(), 0, 0, &status);
+
+        //printf("status=%d name=%s realname=%s\n", status,name.c_str(), realname);
+        std::cout /*<< std::string(depth*2, ' ')*/ << "+ " <<
+            str << "% " << (status == 0 ? realname : name.c_str()) /*<< " " << hit_count*/ << std::endl;
+        free(realname);
+        depths[depth - 1]--;
+      }
+      else
+        total_samples = hit_count;
     }
   }
   while (res && depth != 0xffffffff);
