@@ -55,7 +55,7 @@ agent.so: agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
     $(LIBUNWIND) $(LIBLZMA) -pthread
 
 #WC_OPTS = -fno-omit-frame-pointer 
-WC_OPTS = -O3
+WC_OPTS = -O3 -Ielfio
 
 manager.o: manager.cpp
 	g++ -c $< -o $@ $(WC_OPTS) 

@@ -23,9 +23,9 @@ class callstep
 {
 public:
   uint64_t hit_count{0};
-  uint64_t base_addr;
-  uint64_t end_addr;
-  uint64_t ip_addr;
+  uint64_t base_addr=0;
+  uint64_t end_addr=0;
+  uint64_t ip_addr=0;
   std::string name;
   std::map<uint64_t, callstep*> children;
 
@@ -37,7 +37,6 @@ public:
   static std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);
 
   callstep* find_function(uint64_t ip_addr);
-  void print(uint32_t depth, std::ostream& out);
   bool dump_tree(uint32_t depth, UnixIO& io);
 };
 

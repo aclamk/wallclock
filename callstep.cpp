@@ -20,9 +20,10 @@ callstep::~callstep()
   }
 }
 
-
+extern Agent* the_agent;
 std::pair<std::string, int64_t> callstep::get_symbol(uint64_t ip_addr)
 {
+  return the_agent->get_symbol(ip_addr);
   struct unw_helper
   {
     unw_cursor_t cursor;
@@ -68,7 +69,6 @@ callstep* callstep::find_function(uint64_t ip_addr)
     std::string name;
     int64_t diff;
     std::tie(name, diff) = get_symbol(ip_addr);
-    //if (diff == -1) return nullptr;
     uint64_t base_addr;
     base_addr = ip_addr - diff;
     callstep* cs = new callstep(name, base_addr);
@@ -112,7 +112,6 @@ callstep* callstep::find_function(uint64_t ip_addr)
   std::string name;
   int64_t diff;
   std::tie(name, diff) = get_symbol(ip_addr);
-  //if (diff==-1) return nullptr;
   uint64_t base_addr;
   base_addr = ip_addr - diff;
   callstep* cs = new callstep(name, base_addr);
@@ -121,40 +120,9 @@ callstep* callstep::find_function(uint64_t ip_addr)
   return cs;
 }
 
-void callstep::print(uint32_t depth, std::ostream& out)
-{
-
-  //out << std::string(depth*2, ' ');
-  //out << "hit = " << hit_count << ",\n";
-
-  out << std::string(depth*2, ' ');
-  out << std::hex << base_addr << std::dec << " " << name << " " << hit_count << " ip=" << std::hex << ip_addr-base_addr << std::dec << "\n";
-
-//  out << std::string(depth*2, ' ');
-//  out << "addr = 0x" << std::hex << base_addr << std::dec << ",\n";
-
-  //out << std::string(depth*2, ' ');
-  //out << "{\n";
-  uint64_t last=0;
-  for (auto &i: children)
-  {
-    if(last != i.second->base_addr)
-    {
-      last = i.second->base_addr;
-      i.second->print(depth+1, out);
-    }
-
-  }
-  //out << std::string(depth*2, ' ');
-  //out << "}\n";
-}
-
-
 bool callstep::dump_tree(uint32_t depth, UnixIO& io)
 {
 
-  std::cout << std::string(depth*2, ' ');
-  std::cout << std::hex << base_addr << std::dec << " " << name << " " << hit_count << " ip=" << std::hex << ip_addr-base_addr << std::dec << "\n";
   bool res;
   res = io.write(depth);
   //io.write(base_addr);

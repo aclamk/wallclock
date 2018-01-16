@@ -11,7 +11,7 @@
 #include <vector>
 #include <atomic>
 #include <semaphore.h>
-
+#include <map>
 #include "unix_io.h"
 struct conveyor;
 struct callstep;
@@ -48,6 +48,9 @@ public:
   static Agent* create();
   void add_thread(thread_sampling_ctx* sc);
   static int worker(void*);
+  bool scan_libraries(const std::string& excluded_library);
+  bool load_symbols(const std::string& library, uint64_t begin);
+  std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);
 
   enum {
     CMD_TERMINATE=3,
@@ -57,8 +60,16 @@ public:
   };
 
 private:
+
+  class Symbol
+  {
+  public:
+    std::string name;
+    int64_t size;
+  };
   std::vector<thread_sampling_ctx*> threads;
   UnixIO io;
+  std::map<uint64_t, Symbol> symbols;
   bool worker();
   int read_command();
   bool dump_tree(thread_sampling_ctx* tsx);

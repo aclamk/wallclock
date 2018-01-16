@@ -28,6 +28,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sstream>
+#include <iostream>
 
 #include <string>
 #include <fcntl.h>
@@ -41,7 +43,7 @@
 #include <sys/user.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-
+#include "elfio/elfio/elfio.hpp"
 
 extern "C"
 void _init_wallclock();
@@ -513,9 +515,114 @@ bool Agent::worker()
 }
 
 
+bool Agent::scan_libraries(const std::string& excluded_library)
+{
+  std::string proc_maps_name = "/proc/self/maps";
+
+  std::ifstream proc_maps(proc_maps_name);
+  if (!proc_maps.good())
+    return false;
+
+  while (!proc_maps.eof())
+  {
+    std::string line;
+
+    std::string addr_begin;
+    std::string addr_end;
+    std::string perms;
+    std::string offset;
+    std::string dev;
+    std::string inode;
+    std::string pathname;
+
+    if (std::getline(proc_maps,line))
+    {
+      std::stringstream is(line);
+      if (!std::getline(is, addr_begin, '-')) continue;
+      if (!std::getline(is, addr_end, ' ')) continue;
+      if (!std::getline(is, perms, ' ')) continue;
+      if (!std::getline(is, offset, ' ')) continue;
+      if (!std::getline(is, dev, ' ')) continue;
+      if (!std::getline(is, inode, ' ')) continue;
+      while(is.peek() == ' ')
+        is.get();
+      if (!std::getline(is, pathname)) continue;
+    }
+    if (perms == "r-xp")
+    {
+      if (pathname.find(excluded_library)==pathname.npos)
+      {
+        uint64_t begin = strtoll(addr_begin.c_str(),nullptr, 16);
+        load_symbols(pathname.c_str(), begin);
+      }
+    }
+  }
+  return false;
+}
+
+
+bool Agent::load_symbols(const std::string& library, uint64_t begin)
+{
+  using namespace ELFIO;
+  elfio reader;
+
+  if ( !reader.load( library ) ) {
+      return false;
+  }
+  if (reader.get_type() == ET_EXEC)
+    begin = 0;
+  Elf_Half section_count = reader.sections.size();
+
+  Elf_Half n = reader.sections.size();
+  for ( Elf_Half i = 0; i < n; ++i ) {    // For all sections
+    section* sec = reader.sections[i];
+    if ( SHT_SYMTAB == sec->get_type() || SHT_DYNSYM == sec->get_type() ) {
+      symbol_section_accessor symbols( reader, sec );
+
+      Elf_Xword sym_no = symbols.get_symbols_num();
+      if ( sym_no > 0 ) {
+        for ( Elf_Half i = 0; i < sym_no; ++i ) {
+          std::string   name;
+          Elf64_Addr    value   = 0;
+          Elf_Xword     size    = 0;
+          unsigned char bind    = 0;
+          unsigned char type    = 0;
+          Elf_Half      section = 0;
+          unsigned char other   = 0;
+          symbols.get_symbol( i, name, value, size, bind, type, section, other );
+          if (type == STT_FUNC && section != 0 && section < n)
+          {
+            this->symbols.emplace(begin + (uint64_t)value, Symbol{name, (int64_t)size});
+          }
+        }
+      }
+    }
+  }
+  return true;
+}
+
+std::pair<std::string, int64_t> Agent::get_symbol(uint64_t ip_addr)
+{
+  if (ip_addr == 0)
+    return std::make_pair("nullptr",0);
+  auto it = symbols.upper_bound(ip_addr);
+  if (it == symbols.begin())
+    return std::make_pair("----",0);
+  it--;
+  if (it == symbols.end())
+    return std::make_pair("----",0);
+  //std::cout << "ip_addr=" << ip_addr << " name=" << it->second.name << " addr=" <<it->first << std::endl;
+  return std::make_pair(it->second.name, ip_addr - it->first);
+
+}
+
+
 int Agent::worker(void* arg)
 {
   Agent* an_agent = (Agent*)arg;
+
+  an_agent->scan_libraries("agent.so");
+
   an_agent->worker();
   delete an_agent;
   syscall(SYS_exit, 0);
