@@ -120,7 +120,7 @@ callstep* callstep::find_function(uint64_t ip_addr)
   return cs;
 }
 
-bool callstep::dump_tree(uint32_t depth, UnixIO& io)
+bool callstep::dump_tree(uint32_t depth, UnixIO& io, uint32_t total_samples)
 {
 
   bool res;
@@ -128,7 +128,17 @@ bool callstep::dump_tree(uint32_t depth, UnixIO& io)
   //io.write(base_addr);
   if (res) res = io.write(name);
   if (res) res = io.write(hit_count);
-  uint32_t child_count = children.size();
+  uint32_t child_count = 0;
+  uint64_t last=0;
+  for (auto &i: children)
+  {
+    if(last != i.second->base_addr)
+    {
+      last = i.second->base_addr;
+      if (i.second->hit_count*1000 > total_samples)
+        child_count++;
+    }
+  }
   if (res) res = io.write(child_count);
   if (res) {
     uint64_t last=0;
@@ -137,7 +147,8 @@ bool callstep::dump_tree(uint32_t depth, UnixIO& io)
       if(last != i.second->base_addr)
       {
         last = i.second->base_addr;
-        res = i.second->dump_tree(depth+1, io);
+        if (i.second->hit_count*1000 > total_samples)
+          res = i.second->dump_tree(depth+1, io, total_samples);
       }
       if (!res)
         break;

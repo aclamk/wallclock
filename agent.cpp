@@ -299,10 +299,10 @@ void thread_sampling_ctx::peek()
 
 
 
-bool thread_sampling_ctx::dump_tree(UnixIO& io)
+bool thread_sampling_ctx::dump_tree(UnixIO& io, uint32_t total_samples)
 {
   bool res;
-  res = root->dump_tree(0, io);
+  res = root->dump_tree(0, io, total_samples);
   uint32_t depth = 0xffffffff;
   if (res) io.write(depth);
   return res;
@@ -310,9 +310,9 @@ bool thread_sampling_ctx::dump_tree(UnixIO& io)
 
 
 
-bool Agent::dump_tree(thread_sampling_ctx* tsx)
+bool Agent::dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples)
 {
-  tsx->dump_tree(io);
+  tsx->dump_tree(io, total_samples);
   return true;
 }
 
@@ -353,7 +353,7 @@ bool Agent::dump_tree()
     res = io.write(tid_name);
     if (res) res = io.write(tsx->root->hit_count);
     if (res) res = io.write(tsx->time_suspended);
-    if (res) res = dump_tree(tsx);
+    if (res) res = dump_tree(tsx, tsx->root->hit_count);
   }
   return res;
 }

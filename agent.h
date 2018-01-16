@@ -36,7 +36,7 @@ public:
   static thread_sampling_ctx* create();
   void peek();
   void consume();
-  bool dump_tree(UnixIO& io);
+  bool dump_tree(UnixIO& io,uint32_t total_samples);
 };
 
 
@@ -72,7 +72,7 @@ private:
   std::map<uint64_t, Symbol> symbols;
   bool worker();
   int read_command();
-  bool dump_tree(thread_sampling_ctx* tsx);
+  bool dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples);
   bool dump_tree();
   bool indirect_backtrace();
   bool trace_attach();
