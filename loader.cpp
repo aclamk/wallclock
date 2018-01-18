@@ -95,13 +95,13 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
     std::cerr << "failed to execute remote agent" << std::endl;
     return false;
   }
-  usleep(100*1000);
   int count = 0;
   conn_fd = -1;
-  while (count < 100 && conn_fd ==-1)
+  while (count < 30 && conn_fd ==-1)
   {
     conn_fd = mgr.io.connect(unix_id);
     count++;
+    usleep(100*1000);
   }
   if (conn_fd == -1)
     return false;
