@@ -629,4 +629,16 @@ int Agent::worker(void* arg)
   return 0;
 }
 
+extern "C" void __tls_get_addr(void);
+
+void __tls_get_addr()
+{
+*(char*)0 = 0;
+}
+
+int main(int argc, char** argv)
+{
+  sleep(100);
+}
+
 
