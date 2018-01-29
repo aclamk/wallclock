@@ -78,9 +78,9 @@ plus = $(shell echo $$(( $(1) + $(2) )) )
 agent.bin: agent_0x00000000
 	cp $^ $@
 
-agent_bin_%: agent.elf Makefile agent.o wrapper.o callstep.o unix_io.o tls.o libunwind liblzma
+agent_bin_%: agent.elf Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
 	g++ -fuse-ld=gold -static -s -Wl,--start-group -Wl,--oformat -Wl,binary \
-	-fPIE -fpic -nostdlib $(SOBJS) agent.o wrapper.o callstep.o unix_io.o tls.o \
+	-fPIE -fpic -nostdlib $(SOBJS) agent.o wrapper.o callstep.o unix_io.o \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=map.$* -Wl,--end-group \
     -Ttext=$(call plus, $*, 0x1000) -o $@ 
 
@@ -99,11 +99,11 @@ rel_%: find_relocs agent_0x00000000 agent_% rel_bin
 
 rel_check: rel_0x00112000 rel_0x13579000 rel_0x2648a000 rel_0x18375000
 	    	
-agent.elf: Makefile agent.o wrapper.o callstep.o unix_io.o tls.o libunwind liblzma
+agent.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
 	g++ -fuse-ld=gold -Ttext=0x00000000 -Wl,--start-group -static \
 	-fPIE -fpic -nostdlib $(SOBJS) \
-    -o agent.elf agent.o wrapper.o callstep.o unix_io.o tls.o \
-    $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=a.elf.map -Wl,--end-group
+    -o agent.elf agent.o wrapper.o callstep.o unix_io.o \
+    $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
     
 #WC_OPTS = -fno-omit-frame-pointer 
 WC_OPTS = -O0 -g -Ielfio
