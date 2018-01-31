@@ -49,13 +49,14 @@ int main( int argc, char** argv )
     *(uint64_t*)&bin_header[8] = segments_num;
 
 
-    int bin_fd = open(argv[3], O_WRONLY);
+    int bin_fd = open(argv[3], O_WRONLY | O_CREAT, 0666);
     if (bin_fd == -1){
       printf("Cannot open '%s'\n", argv[3]);
       return 1;
     }
-    int w = pwrite(bin_fd, &bin_header[0], 0x1000, 0);
-    if (w != 0x1000) {
+    size_t s = 16 + segment_entry_size * segments_num;
+    int w = pwrite(bin_fd, &bin_header[0], s, 0);
+    if (w != s) {
       printf("Problem writing '%s'\n", argv[3]);
       return 1;
     }

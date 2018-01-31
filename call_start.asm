@@ -25,9 +25,13 @@ call_start:
 	mov %rsi, %rdx
 
 	pushq $0
-	pushq $L0
+	lea    L0(%rip),%rcx
+	pushq %rcx
+//	pushq $L0
 	pushq $0
-	pushq $L1
+	lea    L1(%rip),%rcx
+	pushq %rcx
+//	pushq $L1
 	pushq $1
 	jmp *%rax
 

@@ -1,4 +1,4 @@
-all: wallclock testprog copy_header callstep.o loader.o agent.so agent.bin rel_bin agent.elf
+all: wallclock testprog copy_header callstep.o loader.o agent.so agent.bin agent.elf agent_0x10000000
 
 .phony: libunwind liblzma
 
@@ -33,8 +33,6 @@ OBJS = \
 clean:
 	echo $(GCC_MACHINE) $(GCC_VERSION)
 	rm -f $(OBJS)
-wrapper.o: injected/wrapper.asm
-	as -c $< -o $@
 	
 #-Wl,--oformat -Wl,binary
 agent: agent.o Makefile wrapper.o callstep.o unix_io.o libunwind liblzma
@@ -89,21 +87,52 @@ agent_bin_%: agent.elf Makefile agent.o wrapper.o callstep.o unix_io.o libunwind
 agent_%: agent_bin_% agent.elf copy_header    
 	tail -c +$(call plus, $*, 1) $< > $@
 	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.$*) $@
+	
+header: agent.elf map.0x00000000 copy_header
+	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.0x00000000) $@
 
-rel_bin: find_relocs agent_0x00000000 agent_0x12345000
+header1: agent1.elf map.0x00000000 copy_header
+	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.0x00000000) $@
+
+
+rel.bin: find_relocs agent_0x00000000 agent_0x12345000
 	./find_relocs agent_0x00000000 agent_0x12345000 0x12345000 $@
 
-rel_%: find_relocs agent_0x00000000 agent_% rel_bin
+rel_%: find_relocs agent_0x00000000 agent_% rel.bin
 	./find_relocs agent_0x00000000 agent_$* $* $@
-	diff $@ rel_bin
+	diff $@ rel.bin
+
+
+header.o: header
+	objcopy --rename-section .data=.header -I binary header -O elf64-x86-64 -B i386 header.o
+
+rel.bin.o: rel.bin
+	objcopy --rename-section .data=.rel.bin -I binary rel.bin -O elf64-x86-64 -B i386 rel.bin.o
+	
+agent.bin.o: agent.bin
+	objcopy --rename-section .data=.agent.bin -I binary agent.bin -O elf64-x86-64 -B i386 agent.bin.o
+
+#-Wl,--oformat -Wl,binary 
+pagent.rel: syscall.o init_agent.o  call_start.o rel.bin.o header.o agent.bin.o
+	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
+	-static -s -nostdlib -fPIE -fpic \
+	-Wl,--start-group $^ -Wl,--end-group -o $@ -T script-loader
 
 rel_check: rel_0x00112000 rel_0x13579000 rel_0x2648a000 rel_0x18375000
 	    	
 agent.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
-	g++ -fuse-ld=gold -Ttext=0x00000000 -Wl,--start-group -static \
+	g++ -fuse-ld=gold -Ttext=0x10001000 -Wl,--start-group -static \
 	-fPIE -fpic -nostdlib $(SOBJS) \
     -o agent.elf agent.o wrapper.o callstep.o unix_io.o \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
+
+agent1.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
+	g++ -fuse-ld=gold -Ttext=0x12341000 -Wl,--start-group -static \
+	-fPIE -fpic -nostdlib $(SOBJS) \
+    -o agent.elf agent.o wrapper.o callstep.o unix_io.o \
+    $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
+    
+
     
 #WC_OPTS = -fno-omit-frame-pointer 
 WC_OPTS = -O0 -g -Ielfio
@@ -130,18 +159,38 @@ largecode.o: largecode.cpp
 	g++ -c $< -o $@ $(WC_OPTS)
 
 
-testprog: testprog.cpp largecode.o
-	g++ $^ -o $@ -lpthread
-
 wallclock.o: wallclock.cpp
 	g++ -c $< -o $@ $(WC_OPTS) -fPIC
 
 call_start.o: call_start.asm
 	as -c $< -o $@
 
+init_agent.o: init_agent.c
+	gcc -g -O3 -c $< -o $@ -fPIC
+
+wrapper.o: injected/wrapper.asm
+	as -c $< -o $@
+	
+syscall.o: syscall.asm
+	as -c $< -o $@
+	
+
+test_agent_0x10000000: test_agent_0x10000000.cpp agent_0x10000000 call_start.o
+	g++ -static $< call_start.o -o $@
+
+test_agent_relocated: test_agent_relocated.cpp agent_0x00000000 call_start.o rel.bin.o
+	g++ -static $< call_start.o rel.bin.o -o $@
+
+test_agent_anyplace: test_agent_anyplace.cpp pagent.rel
+	g++ -static $< -o $@
+	
+	
 	
 wallclock: wallclock.o callstep.o agent.so manager.o loader.o unix_io.o call_start.o
 	g++ -o $@ $^ -lpthread -lunwind 
+
+testprog: testprog.cpp largecode.o
+	g++ $^ -o $@ -lpthread
 	
 copy_header: copy_header.cpp
 	g++ -o $@ $^ $(WC_OPTS) 
@@ -149,3 +198,5 @@ copy_header: copy_header.cpp
 find_relocs: find_relocs.cpp
 	g++ -o $@ $^ $(WC_OPTS) 
 	
+init_agent: init_agent.o syscall.o
+	g++ -o $@ $^
