@@ -44,7 +44,7 @@ int load_agent(void*)
   printf("auxv_size=%d\n",auxv_size);
 
 
-  int fd = open("agent_0x00000000",O_RDONLY);
+  int fd = open("agent_wh_0x00000000",O_RDONLY);
   printf("fd=%d\n",fd);
   int res;
   struct stat buf;

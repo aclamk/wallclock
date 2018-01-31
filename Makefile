@@ -76,30 +76,44 @@ plus = $(shell echo $$(( $(1) + $(2) )) )
 agent.bin: agent_0x00000000
 	cp $^ $@
 
-agent_bin_%: agent.elf Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
+agent_bin_% map.%: agent.%.elf Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
 	g++ -fuse-ld=gold -static -s -Wl,--start-group -Wl,--oformat -Wl,binary \
 	-fPIE -fpic -nostdlib $(SOBJS) agent.o wrapper.o callstep.o unix_io.o \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=map.$* -Wl,--end-group \
-    -Ttext=$(call plus, $*, 0x1000) -o $@ 
+    -Ttext=$(call plus, $*, 0x1000) -o agent_bin_$*
 
-.PRECIOUS: agent_%
-	    
-agent_%: agent_bin_% agent.elf copy_header    
-	tail -c +$(call plus, $*, 1) $< > $@
-	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.$*) $@
+.PRECIOUS: agent_% 
+
+header_%: agent.%.elf map.% copy_header
+	./copy_header agent.$*.elf $$(sed -n '/ _start$$/ s/_start// p' map.$*) header_$*
 	
-header: agent.elf map.0x00000000 copy_header
-	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.0x00000000) $@
+agent_nh_%: agent_bin_%
+	tail -c +$(call plus, $*, 0x1001) agent_bin_$* > agent_nh_$*
+
+agent_wh_%: agent_bin_% agent.%.elf map.% copy_header    
+	tail -c +$(call plus, $*, 1) agent_bin_$* > agent_wh_$*
+	./copy_header agent.$*.elf $$(sed -n '/ _start$$/ s/_start// p' map.$*) agent_wh_$*
+
+
+
+header: header_0x00000000
+	cp $< $@ 
+
+agent_nh.bin: agent_nh_0x00000000
+	cp $< $@
+	
+#agent.elf map.0x00000000 copy_header
+#	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.0x00000000) $@
 
 header1: agent1.elf map.0x00000000 copy_header
 	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.0x00000000) $@
 
 
-rel.bin: find_relocs agent_0x00000000 agent_0x12345000
-	./find_relocs agent_0x00000000 agent_0x12345000 0x12345000 $@
+rel.bin: find_relocs agent_wh_0x00000000 agent_wh_0x12345000
+	./find_relocs agent_wh_0x00000000 agent_wh_0x12345000 0x12345000 $@
 
-rel_%: find_relocs agent_0x00000000 agent_% rel.bin
-	./find_relocs agent_0x00000000 agent_$* $* $@
+rel_%: find_relocs agent_wh_0x00000000 agent_wh_% rel.bin
+	./find_relocs agent_wh_0x00000000 agent_wh_$* $* $@
 	diff $@ rel.bin
 
 
@@ -109,16 +123,19 @@ header.o: header
 rel.bin.o: rel.bin
 	objcopy --rename-section .data=.rel.bin -I binary rel.bin -O elf64-x86-64 -B i386 rel.bin.o
 	
-agent.bin.o: agent.bin
-	objcopy --rename-section .data=.agent.bin -I binary agent.bin -O elf64-x86-64 -B i386 agent.bin.o
+agent_nh.bin.o: agent_nh.bin
+	objcopy --rename-section .data=.agent.bin -I binary agent_nh.bin -O elf64-x86-64 -B i386 agent_nh.bin.o
 
 #-Wl,--oformat -Wl,binary 
-pagent.rel: syscall.o init_agent.o  call_start.o rel.bin.o header.o agent.bin.o
+PAGENT_OBJS = syscall.o init_agent.o call_start.o rel.bin.o header.o agent_nh.bin.o
+ 
+pagent.rel: $(PAGENT_OBJS) Makefile script-loader 
 	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
 	-static -s -nostdlib -fPIE -fpic \
-	-Wl,--start-group $^ -Wl,--end-group -o $@ -T script-loader
+	-Wl,--start-group $(PAGENT_OBJS) -Wl,--end-group -o $@ -T script-loader
 
 rel_check: rel_0x00112000 rel_0x13579000 rel_0x2648a000 rel_0x18375000
+	 
 	    	
 agent.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
 	g++ -fuse-ld=gold -Ttext=0x10001000 -Wl,--start-group -static \
@@ -126,13 +143,15 @@ agent.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
     -o agent.elf agent.o wrapper.o callstep.o unix_io.o \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
 
-agent1.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
-	g++ -fuse-ld=gold -Ttext=0x12341000 -Wl,--start-group -static \
+agent.%.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
+	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -Wl,--start-group -static \
 	-fPIE -fpic -nostdlib $(SOBJS) \
-    -o agent.elf agent.o wrapper.o callstep.o unix_io.o \
+    -o agent.$*.elf agent.o wrapper.o callstep.o unix_io.o \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
     
-
+QQQ% RRR%: ZZZ%
+	echo $<
+	echo $@
     
 #WC_OPTS = -fno-omit-frame-pointer 
 WC_OPTS = -O0 -g -Ielfio
@@ -175,10 +194,10 @@ syscall.o: syscall.asm
 	as -c $< -o $@
 	
 
-test_agent_0x10000000: test_agent_0x10000000.cpp agent_0x10000000 call_start.o
+test_agent_0x10000000: test_agent_0x10000000.cpp agent_wh_0x10000000 call_start.o
 	g++ -static $< call_start.o -o $@
 
-test_agent_relocated: test_agent_relocated.cpp agent_0x00000000 call_start.o rel.bin.o
+test_agent_relocated: test_agent_relocated.cpp agent_wh_0x00000000 call_start.o rel.bin.o
 	g++ -static $< call_start.o rel.bin.o -o $@
 
 test_agent_anyplace: test_agent_anyplace.cpp pagent.rel

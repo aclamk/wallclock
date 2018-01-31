@@ -60,7 +60,7 @@ int main( int argc, char** argv )
     val1 = buf1[i-1] | (buf1[i]<<8) | (buf1[i+1]<<16) | (buf1[i+2]<<24);
     val2 = buf2[i-1] | (buf2[i]<<8) | (buf2[i+1]<<16) | (buf2[i+2]<<24);
 
-    printf("%d %8.8x %8.8x %8.8x\n", i-1, val1, val2, val2-val1);
+    //printf("%d %8.8x %8.8x %8.8x\n", i-1, val1, val2, val2-val1);
     if(val1-val2 != relocation && val2-val1 != relocation) {
       std::cerr << "@" << i << " mismatched offset" << std::endl;
       return 1;

@@ -1,0 +1,20 @@
+SECTIONS
+{ 
+  . = 0x00000000;
+  .mysection : { *(.mysection) }
+  .text : { *(.text) }
+  .data : { *(.data) } 
+  .bss : { *(.bss) }
+  .comment : { *(.comment) }
+  .note.gnu.build-id : { *(.note.gnu.build-id) }
+ 
+  . = ALIGN(16);
+  .rel.bin : { *(.rel.bin*) }
+  . = ALIGN(4096);
+  PROVIDE (_stack_top = .);
+  . = . + 65536;
+  PROVIDE (_stack_bottom = .);
+  .header : { *(.header*) }
+  . = ALIGN(4096);
+  .agent.bin : { *(.agent.bin*) }
+}
