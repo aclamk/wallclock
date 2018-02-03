@@ -15,6 +15,7 @@
 #include "loader.h"
 #include "unix_io.h"
 #include <atomic>
+#include <functional>
 typedef void interruption_func(void);
 
 typedef uint64_t remote_sampling_ctx;
@@ -53,7 +54,10 @@ public:
   bool signal_interrupt();
   bool cont();
   bool syscall();
+  bool single_step();
   bool read_regs();
+  bool read_regs(user_regs_struct& regs);
+  bool write_regs(const user_regs_struct& regs);
   bool wait_return(uint64_t* arg1=nullptr,
                    uint64_t* arg2=nullptr,
                    uint64_t* arg3=nullptr);
@@ -62,10 +66,18 @@ public:
   void set_remote_context(uint64_t remote_context);
 
   bool pause(user_regs_struct& regs);
-
+  bool pause_after_syscall(user_regs_struct& regs);
+  bool pause_outside_syscall();
   bool execute_remote(interruption_func* func,
                       uint64_t* res1);
-
+  bool wait_status(int* wstatus);
+  bool inject_syscall(std::function<void(user_regs_struct&)> prepare_regs,
+                      user_regs_struct& result);
+  bool inject_syscall(uint64_t syscall_rip,
+                      std::function<void(user_regs_struct&)> prepare_regs,
+                      user_regs_struct& result);
+  bool locate_syscall(uint64_t* syscall_rip);
+  bool execute_init(uint64_t init_addr);
 };
 
 class Manager

@@ -50,6 +50,25 @@ int monitored_thread::inject_func(user_regs_struct& regs,
   return ret;
 }
 
+bool monitored_thread::execute_init(uint64_t init_addr)
+{
+  int ret = 0;
+  user_regs_struct regs;
+  if (!read_regs(regs)) return false;
+  regs.rsp -= ( 128 + 8);
+  if (ret == 0)
+    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rax);
+  regs.rsp -= 8;
+  if (ret == 0)
+    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
+  regs.rax = 0xfee1fab; //this will mean init was called from remote
+  regs.rip = init_addr;
+  if (ret == 0)
+    ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
+  //cont();
+  return ret;
+}
+
 
 bool monitored_thread::seize(pid_t target)
 {
@@ -107,10 +126,33 @@ bool monitored_thread::syscall()
   return (ret == 0);
 }
 
+bool monitored_thread::single_step()
+{
+  long ret;
+  ret = ptrace(PTRACE_SINGLESTEP, m_target, nullptr, nullptr);
+  return (ret == 0);
+}
+
+
 bool monitored_thread::read_regs()
 {
   long ret;
   ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
+  return (ret == 0);
+}
+
+bool monitored_thread::read_regs(user_regs_struct& regs)
+{
+  long ret;
+  ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
+  return (ret == 0);
+}
+
+bool monitored_thread::write_regs(const user_regs_struct& regs)
+{
+  long ret;
+  ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
+  this->regs = regs;
   return (ret == 0);
 }
 
@@ -129,6 +171,23 @@ pid_t do_waitpid(pid_t pid, int* wstatus)
   }
   while ((wpid == 0) && (iter < 100));
   return wpid;
+}
+
+bool monitored_thread::wait_status(int* wstatus)
+{
+  pid_t wpid;
+  uint32_t sleep_time = 1;
+  uint32_t iter = 1;
+  do {
+    wpid = waitpid(m_target, wstatus, WNOHANG);
+    if (wpid == 0) {
+      usleep(sleep_time);
+      sleep_time += iter;
+      iter++;
+    }
+  }
+  while ((wpid == 0) && (iter < 100));
+  return wpid == m_target;
 }
 
 
@@ -220,6 +279,197 @@ bool monitored_thread::pause(user_regs_struct& regs)
   return true;
 }
 
+bool monitored_thread::pause_after_syscall(user_regs_struct& regs)
+{
+  int wstatus = 0;
+  printf("%d\n",__LINE__);
+  if (!signal_interrupt())
+    return false;
+  printf("%d\n",__LINE__);
+  if (do_waitpid(m_target, &wstatus) != m_target)
+    return false;
+  printf("%d\n",__LINE__);
+  if (!syscall())
+    return false;
+//  printf("%d\n",__LINE__);
+//  if (!cont())
+//    return false;
+  printf("%d\n",__LINE__);
+#if 1
+  if (kill(m_target, SIGSTOP) != 0)
+    return false;
+  printf("%d\n",__LINE__);
+  if (kill(m_target, SIGCONT) != 0)
+    return false;
+  printf("%d\n",__LINE__);
+#endif
+  if (do_waitpid(m_target, &wstatus) != m_target)
+    return false;
+  printf("%d\n",__LINE__);
+
+  long ret;
+  ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
+  if (ret != 0)
+    return false;
+  printf("%d\n",__LINE__);
+  errno = 0;
+  uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip-2), nullptr);
+  if (errno != 0)
+    return false;
+  printf("%d\n",__LINE__);
+  printf("rip =%llx code= %8.8x\n", regs.rip, code);
+  if ((code & 0xffff) == 0x050f)   //0x0f05 is SYSCALL
+  {
+    printf("OK\n");
+    return true;
+  }
+  return false;
+}
+
+bool monitored_thread::pause_outside_syscall()
+{
+  if(!signal_interrupt()) return false;
+  user_regs_struct regs;
+  int wstatus;
+  if(!wait_status(&wstatus)) return false;
+  if(!read_regs(regs)) return false;
+  errno = 0;
+  uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip - 2), nullptr);
+  if (errno != 0) return false;
+  if ((code & 0xffff) != 0x050f) {
+    //easy success
+    return true;
+  }
+  if(!syscall()) return false;
+  if (kill(m_target, SIGSTOP) != 0)
+    return false;
+  if (kill(m_target, SIGCONT) != 0)
+    return false;
+  if (!wait_status(&wstatus)) return false;
+  for (int i=0; i<100; i++)
+  {
+    int wstatus;
+    if (!single_step()) return false;
+    if (!wait_status(&wstatus)) return false;
+    if (!WIFSTOPPED(wstatus)) return false;
+    if (!read_regs(regs)) return false;
+    errno = 0;
+    uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip - 2), nullptr);
+    if (errno != 0) return false;
+    if ((code & 0xffff) != 0x050f) {
+      //easy success
+      return true;
+    }
+  }
+  cont();
+  return false;
+}
+
+
+bool monitored_thread::inject_syscall(std::function<void(user_regs_struct&)> prepare_regs, user_regs_struct& result)
+{
+  uint64_t syscall_rip;
+  user_regs_struct saved_regs;
+  if (!read_regs(saved_regs)) return false;
+  user_regs_struct aregs = regs;
+  errno = 0;
+  uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(saved_regs.rip - 2), nullptr);
+  if (errno != 0) return false;
+  if ((code & 0xffff) != 0x050f) return false;  //0x0f05 is SYSCALL
+  syscall_rip = saved_regs.rip - 2;
+  printf("SYSCALL rip = %llx\n", syscall_rip);
+  //we seem to be in proper place in code
+  //step out of syscall
+  do
+  {
+    int wstatus;
+    if (!single_step()) return false;
+    if (!wait_status(&wstatus)) return false;
+    if (!WIFSTOPPED(wstatus)) return false;
+    if (!read_regs(saved_regs)) return false;
+    printf("STEP eip=%llx\n",saved_regs.rip);
+    //printf("STEP wstatus = %lx %d %d\n",wstatus, WIFSTOPPED(wstatus), (wstatus >> 16) != PTRACE_EVENT_STOP);
+  }
+  while (saved_regs.rip - 2 == syscall_rip);
+
+  aregs = saved_regs;
+  aregs.rip = syscall_rip;
+  prepare_regs(aregs);
+  if (!write_regs(aregs)) return false;
+  do {
+    int wstatus;
+    if (!single_step()) return false;
+    if (!wait_status(&wstatus)) return false;
+    if (!WIFSTOPPED(wstatus)) return false;
+    if (!read_regs(aregs)) return false;
+    printf("SYSCALL eip=%llx\n",aregs.rip);
+    sleep(1);
+  } while (/*aregs.rip - 2 == syscall_rip || */aregs.rip == syscall_rip);
+  result = aregs;
+  if (!write_regs(saved_regs)) return false;
+  return true;
+}
+
+
+bool monitored_thread::inject_syscall(uint64_t syscall_rip,
+                                      std::function<void(user_regs_struct&)> prepare_regs,
+                                      user_regs_struct& result)
+{
+  user_regs_struct saved_regs;
+  user_regs_struct regs;
+  if (!read_regs(saved_regs)) return false;
+
+  regs = saved_regs;
+  regs.rip = syscall_rip;
+  prepare_regs(regs);
+  if (!write_regs(regs)) return false;
+  do {
+    int wstatus;
+    if (!single_step()) return false;
+    if (!wait_status(&wstatus)) return false;
+    if (!WIFSTOPPED(wstatus)) return false;
+    if (!read_regs(regs)) return false;
+  } while (regs.rip == syscall_rip);
+  result = regs;
+  if (!write_regs(saved_regs)) return false;
+  return true;
+}
+
+bool monitored_thread::locate_syscall(uint64_t* syscall_eip)
+{
+  if(!signal_interrupt()) return false;
+  user_regs_struct regs;
+  int wstatus;
+  if(!wait_status(&wstatus)) return false;
+  if(!read_regs(regs)) return false;
+  errno = 0;
+  uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip - 2), nullptr);
+  if (errno != 0) return false;
+  if ((code & 0xffff) == 0x050f) {
+    //easy success
+    *syscall_eip = regs.rip - 2;
+    cont();
+    return true;
+  }
+  if(!syscall()) return false;
+  if (kill(m_target, SIGSTOP) != 0)
+    return false;
+  if (kill(m_target, SIGCONT) != 0)
+    return false;
+  if(!wait_status(&wstatus)) return false;
+  if(!read_regs(regs)) return false;
+  errno = 0;
+  code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip - 2), nullptr);
+  if (errno != 0) return false;
+  if ((code & 0xffff) == 0x050f) {
+    //easy success
+    *syscall_eip = regs.rip - 2;
+    cont();
+    return true;
+  }
+  cont();
+  return false;
+}
 
 bool monitored_thread::execute_remote(interruption_func* func,
                                   uint64_t* res1)

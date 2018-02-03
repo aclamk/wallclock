@@ -629,16 +629,19 @@ int Agent::worker(void* arg)
   return 0;
 }
 
+#if 0
 extern "C" void __tls_get_addr(void);
 
 void __tls_get_addr()
 {
 *(char*)0 = 0;
 }
-
+#endif
 int main(int argc, char** argv)
 {
-  sleep(100);
+  printf("here!!!\n");
+  the_agent = Agent::create();//new agent;
+  Agent::worker(the_agent);
 }
 
 

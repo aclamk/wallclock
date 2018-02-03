@@ -1,4 +1,5 @@
-all: wallclock testprog copy_header callstep.o loader.o agent.so agent.bin agent.elf agent_0x10000000
+all: wallclock agent.so pagent.rel
+tests: testprog test_agent_0x10000000 test_agent_anyplace test_agent_relocated
 
 .phony: libunwind liblzma
 
@@ -127,7 +128,7 @@ agent_nh.bin.o: agent_nh.bin
 	objcopy --rename-section .data=.agent.bin -I binary agent_nh.bin -O elf64-x86-64 -B i386 agent_nh.bin.o
 
 #-Wl,--oformat -Wl,binary 
-PAGENT_OBJS = syscall.o init_agent.o call_start.o rel.bin.o header.o agent_nh.bin.o
+PAGENT_OBJS = bootup_agent.o syscall.o init_agent.o call_start.o rel.bin.o header.o agent_nh.bin.o
  
 pagent.rel: $(PAGENT_OBJS) Makefile script-loader 
 	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
@@ -145,14 +146,11 @@ agent.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
 
 agent.%.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
 	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -Wl,--start-group -static \
-	-fPIE -fpic -nostdlib $(SOBJS) \
+	-fPIE -fpic -nostdlib -Wl,-Map=agent.$*.map $(SOBJS) \
     -o agent.$*.elf agent.o wrapper.o callstep.o unix_io.o \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
     
-QQQ% RRR%: ZZZ%
-	echo $<
-	echo $@
-    
+
 #WC_OPTS = -fno-omit-frame-pointer 
 WC_OPTS = -O0 -g -Ielfio
 
@@ -192,6 +190,11 @@ wrapper.o: injected/wrapper.asm
 	
 syscall.o: syscall.asm
 	as -c $< -o $@
+	
+bootup_agent.o: bootup_agent.asm
+	as -c $< -o $@
+	
+	
 	
 
 test_agent_0x10000000: test_agent_0x10000000.cpp agent_wh_0x10000000 call_start.o

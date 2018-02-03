@@ -14,6 +14,15 @@
 #include <string.h>
 #include <assert.h>
 #include "manager.h"
+#include <linux/ptrace.h>
+
+#include <stdio.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/uio.h>
 
 extern RemoteAPI agent_interface;
 RemoteAPI agent_interface_remote;
@@ -62,16 +71,19 @@ void* locate_library(pid_t pid, const std::string& library_name)
 
 extern RemoteAPI agent_interface;
 
-bool init_agent_interface(Manager& mgr, pid_t remote)
+bool init_agent_so(pid_t remote, uint64_t& unix_id)
 {
   void* my_agent_so = locate_library(syscall(SYS_gettid), "agent.so");
   void* remote_agent_so = locate_library(remote, "agent.so");
   assert(my_agent_so != nullptr);
   if (remote_agent_so == nullptr) {
     std::cout << "remote does not have agent.so library" << std::endl;
-    exit(-1);
+    //exit(-1);
+    return false;
   }
-  assert(memcmp(agent_interface.sanity_marker,"AGENTAPI",8) == 0);
+  if (memcmp(agent_interface.sanity_marker,"AGENTAPI",8) != 0) {
+    return false;
+  }
 
   int64_t diff = (uint64_t)remote_agent_so - (uint64_t)my_agent_so;
 
@@ -79,22 +91,111 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
   agent_interface_remote._init_agent += diff;
   agent_interface_remote._wc_inject += diff;
 
-  long ret;
   monitored_thread pt;
-  int conn_fd;
-  if (! pt.seize(remote))
+  if (!pt.seize(remote))
   {
     std::cerr << "Target " << remote << " cannot be sized" << std::endl;
     return false;
   }
-  user_regs_struct regs;
-  int wstatus;
-  uint64_t unix_id;
   if (!pt.execute_remote((interruption_func*)agent_interface_remote._init_agent, &unix_id))
   {
     std::cerr << "failed to execute remote agent" << std::endl;
     return false;
   }
+  if (!pt.detach())
+    return false;
+
+  return true;
+}
+
+bool load_binary_agent(pid_t remote, uint64_t& unix_id)
+{
+  monitored_thread pt;
+  int conn_fd;
+  if (!pt.seize(remote)) {
+    std::cerr << "Target " << remote << " cannot be sized" << std::endl;
+    return false;
+  }
+
+  int res;
+  char* local_image;
+  struct stat buf;
+  int fd = open("pagent.rel",O_RDONLY);
+  if (fd >= 0) {
+    res = fstat(fd, &buf);
+    if (res == 0) {
+      local_image = new char[buf.st_size];
+      //ptr = (char*)mmap((void*)0x10000000, buf.st_size*2, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANON|MAP_FIXED, -1, 0);
+      res = read(fd, local_image, buf.st_size);
+    }
+    close (fd);
+    if (res != buf.st_size) return false;
+  }
+
+  user_regs_struct regs;
+  uint64_t syscall_rip;
+  if (!pt.locate_syscall(&syscall_rip)) return false;
+  if (!pt.pause_outside_syscall()) return false;
+  user_regs_struct mmap_result;
+  pt.inject_syscall(syscall_rip,[&buf](user_regs_struct& regs){
+    regs.rax = SYS_mmap;
+    regs.rdi = 0x10000000;
+    regs.rsi = buf.st_size*2;
+    regs.rdx = PROT_READ|PROT_WRITE|PROT_EXEC;
+    regs.r10 = MAP_PRIVATE|MAP_ANON|MAP_FIXED;
+    regs.r8 = -1;
+    regs.r9 = 0;
+  }, mmap_result);
+  printf("rax=%llx\n", mmap_result.rax);
+  if (mmap_result.rax == -1) return false;
+  char* remote_image = (char*) mmap_result.rax;
+  struct iovec local_iov;
+  struct iovec remote_iov;
+  local_iov.iov_base = local_image;
+  local_iov.iov_len = buf.st_size;
+  remote_iov.iov_base = remote_image;
+  remote_iov.iov_len = buf.st_size;
+
+  res = process_vm_writev(remote, &local_iov, 1, &remote_iov, 1, 0);
+  printf("res=%d\n",res);
+  pt.execute_init((uint64_t)remote_image);
+  //uint64_t unix_id;
+  pt.wait_return(&unix_id);
+  printf("unix_id=%lld\n",unix_id);
+  pt.detach();
+
+  //int64_t diff = (uint64_t)remote_agent_so - (uint64_t)my_agent_so;
+
+  agent_interface_remote = agent_interface;
+  agent_interface_remote._init_agent = 0x10000000;
+  //agent_interface_remote._wc_inject += diff;
+
+  return true;
+}
+
+
+
+bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so)
+{
+  uint64_t unix_id;
+  if (use_agent_so) {
+    bool b = init_agent_so(remote, unix_id);
+    if (!b) {
+      std::cerr << "Unable to use remote agent.so" << std::endl;
+      return false;
+    }
+
+
+  } else {
+    bool b = load_binary_agent(remote, unix_id);
+    if (!b) {
+      std::cerr << "Failed to load wallclock agent to remote" << std::endl;
+      return false;
+    }
+  }
+  long ret;
+  int conn_fd;
+
   int count = 0;
   conn_fd = -1;
   while (count < 30 && conn_fd ==-1)
@@ -106,8 +207,6 @@ bool init_agent_interface(Manager& mgr, pid_t remote)
   if (conn_fd == -1)
     return false;
 
-  if (!pt.detach())
-    return false;
   return true;
 }
 

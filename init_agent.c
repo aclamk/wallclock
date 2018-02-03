@@ -55,6 +55,7 @@ void init_agent()
 //  sleep(1);
 //  printf("v=%d\n",v);
 //  sleep(1);
+  raw_syscall(-1, 111111 );
 }
 
 //extern "C" void* agent_binary_begin;
@@ -118,6 +119,10 @@ void atexit_x() {
 
 void agent_thread()
 {
+  struct timespec rqtp; //= { 40, 0 };
+  rqtp.tv_sec = 30;
+  //raw_syscall(SYS_nanosleep, &rqtp, 0);
+
   int auxv_size = load_auxv(_stack_top);
   if (auxv_size >= 0 && auxv_size < 4096) {
     fix_auxv((uint64_t*)_stack_top, auxv_size/(sizeof(uint64_t) * 2));
@@ -130,9 +135,11 @@ void agent_thread()
 }
 
 
+#if 0
 int main(int argc, char** argv)
 {
   init_agent();
   _binary_agent_nh_bin_start[111]=111;
   return 0;
 }
+#endif

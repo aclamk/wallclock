@@ -183,7 +183,7 @@ int main(int argc, char** argv)
   }
 
   Manager mgr;
-  init_agent_interface(mgr, tids[0]);
+  init_agent_interface(mgr, tids[0], false);
 
   struct sigaction stop_sampling_sig;
 

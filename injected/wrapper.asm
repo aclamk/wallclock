@@ -9,8 +9,11 @@ agent_interface:
 	.quad _wc_inject
 
 //_init_wallclock must be first function in .text
+.globl startup
+
 .text
 .protected _init_wallclock
+startup:
 	jmp _init_wallclock
 
 //.globl __tls_get_addr

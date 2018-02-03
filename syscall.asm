@@ -1,10 +1,3 @@
-//.section .mysection
-.text
-.globl init_agent
-.align 16
-entry_point:
-	jmp init_agent
-
 .globl raw_syscall
 .text
 .align 16
