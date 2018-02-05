@@ -43,7 +43,7 @@
 #include <sys/user.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include "elfio/elfio/elfio.hpp"
+#include <elfio/elfio.hpp>
 
 extern "C"
 void _init_wallclock();

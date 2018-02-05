@@ -19,25 +19,39 @@ LIBLZMA = liblzma/src/liblzma/.libs/liblzma.a
 
 GCC_VERSION:=$(shell gcc -dumpversion)
 GCC_MACHINE:=$(shell gcc -dumpmachine)
-	
-OBJS = \
-	wrapper.o \
-	manager.o \
-	loader.o \
-	callstep.o \
-	agent.o \
-	largecode.o \
-	wallclock.o \
-	unix_io.o \
-	agent.so
+
+
+OBJS_AGENT_ASM = obj/agent/wrapper.o 
+OBJS_AGENT_CPP = obj/agent/agent.o \
+                 obj/agent/callstep.o \
+                 obj/agent/unix_io.o
+OBJS_AGENT = $(OBJS_AGENT_ASM) $(OBJS_AGENT_CPP)
+
+OBJS_BOOTUP_ASM = obj/bootup/bootup_agent.o \
+                  obj/bootup/syscall.o \
+                  obj/bootup/call_start.o 
+OBJS_BOOTUP_C =   obj/bootup/init_agent.o
+OBJS_BOOTUP = $(OBJS_BOOTUP_ASM) $(OBJS_BOOTUP_C)
+
+OBJS_WALLCLOCK = obj/wallclock/manager.o \
+                 obj/wallclock/loader.o \
+                 obj/wallclock/wallclock.o \
+                 obj/wallclock/unix_io.o
+
+OBJS = $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT)
+OBJ_DIRS = $(sort $(dir $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT)))
+$(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT): $(OBJ_DIRS)
+$(OBJ_DIRS):
+	mkdir -p $@
+
 
 clean:
 	echo $(GCC_MACHINE) $(GCC_VERSION)
 	rm -f $(OBJS)
 	
 #-Wl,--oformat -Wl,binary
-agent: agent.o Makefile wrapper.o callstep.o unix_io.o libunwind liblzma
-	g++ -Wl,--start-group wrapper.o agent.o callstep.o unix_io.o \
+agent: $(OBJS_AGENT) libunwind liblzma Makefile
+	g++ -Wl,--start-group $(OBJS_AGENT) \
 	-fPIE -s -Wl,--oformat -Wl,binary -static -pie -T script \
 	-nostdlib \
 	/usr/lib/x86_64-linux-gnu/libc.a \
@@ -48,10 +62,9 @@ agent: agent.o Makefile wrapper.o callstep.o unix_io.o libunwind liblzma
 	-Wl,--end-group
 
 
-agent.so: agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
+agent.so: $(OBJS_AGENT) libunwind liblzma Makefile
 	g++ -shared -Wl,-export-dynamic -Wl,-soname,agent.so \
-    -o agent.so agent.o wrapper.o callstep.o unix_io.o \
-    $(LIBUNWIND) $(LIBLZMA) -pthread
+    -o agent.so $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -pthread
 
 #-fuse-ld=gold /usr/lib/x86_64-linux-gnu/Scrt1.o 
 SOBJS = /usr/lib/x86_64-linux-gnu/Scrt1.o \
@@ -77,9 +90,9 @@ plus = $(shell echo $$(( $(1) + $(2) )) )
 agent.bin: agent_0x00000000
 	cp $^ $@
 
-agent_bin_% map.%: agent.%.elf Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
+agent_bin_% map.%: agent.%.elf Makefile $(OBJS_AGENT) libunwind liblzma
 	g++ -fuse-ld=gold -static -s -Wl,--start-group -Wl,--oformat -Wl,binary \
-	-fPIE -fpic -nostdlib $(SOBJS) agent.o wrapper.o callstep.o unix_io.o \
+	-fPIE -fpic -nostdlib $(SOBJS) $(OBJS_AGENT) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=map.$* -Wl,--end-group \
     -Ttext=$(call plus, $*, 0x1000) -o agent_bin_$*
 
@@ -102,9 +115,6 @@ header: header_0x00000000
 
 agent_nh.bin: agent_nh_0x00000000
 	cp $< $@
-	
-#agent.elf map.0x00000000 copy_header
-#	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.0x00000000) $@
 
 header1: agent1.elf map.0x00000000 copy_header
 	./copy_header agent.elf $$(sed -n '/ _start$$/ s/_start// p' map.0x00000000) $@
@@ -127,75 +137,48 @@ rel.bin.o: rel.bin
 agent_nh.bin.o: agent_nh.bin
 	objcopy --rename-section .data=.agent.bin -I binary agent_nh.bin -O elf64-x86-64 -B i386 agent_nh.bin.o
 
-#-Wl,--oformat -Wl,binary 
-PAGENT_OBJS = bootup_agent.o syscall.o init_agent.o call_start.o rel.bin.o header.o agent_nh.bin.o
+POBJS_AGENT = $(OBJS_BOOTUP) rel.bin.o header.o agent_nh.bin.o
  
-pagent.rel: $(PAGENT_OBJS) Makefile script-loader 
+pagent.rel: $(POBJS_AGENT) Makefile script-loader 
 	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
 	-static -s -nostdlib -fPIE -fpic \
-	-Wl,--start-group $(PAGENT_OBJS) -Wl,--end-group -o $@ -T script-loader
+	-Wl,--start-group $(POBJS_AGENT) -Wl,--end-group -o $@ -T script-loader
 
 rel_check: rel_0x00112000 rel_0x13579000 rel_0x2648a000 rel_0x18375000
 	 
 	    	
-agent.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
+agent.elf: Makefile $(OBJS_AGENT) libunwind liblzma
 	g++ -fuse-ld=gold -Ttext=0x10001000 -Wl,--start-group -static \
 	-fPIE -fpic -nostdlib $(SOBJS) \
-    -o agent.elf agent.o wrapper.o callstep.o unix_io.o \
+    -o agent.elf $(OBJS_AGENT) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
 
-agent.%.elf: Makefile agent.o wrapper.o callstep.o unix_io.o libunwind liblzma
+agent.%.elf: $(OBJS_AGENT) libunwind liblzma Makefile
 	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -Wl,--start-group -static \
 	-fPIE -fpic -nostdlib -Wl,-Map=agent.$*.map $(SOBJS) \
-    -o agent.$*.elf agent.o wrapper.o callstep.o unix_io.o \
+    -o agent.$*.elf $(OBJS_AGENT) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
     
 
 #WC_OPTS = -fno-omit-frame-pointer 
 WC_OPTS = -O0 -g -Ielfio
+DEBUG = -O0 -g
 
-manager.o: manager.cpp
-	g++ -c $< -o $@ $(WC_OPTS) 
-	
-loader.o: loader.cpp
-	g++ -c $< -o $@ $(WC_OPTS) -fPIC
-
-unix_io.o: unix_io.cpp
-	g++ -c $< -o $@ $(WC_OPTS) -fPIC
-
-tls.o: tls.cpp
-	g++ -c $< -o $@ $(WC_OPTS) -fPIC
-
-callstep.o: callstep.cpp
-	g++ -c $< -o $@ $(WC_OPTS) -fPIC
-
-agent.o: agent.cpp
-	g++ -c $< -o $@ $(WC_OPTS) -fPIC
-
-largecode.o: largecode.cpp
-	g++ -c $< -o $@ $(WC_OPTS)
-
-
-wallclock.o: wallclock.cpp
-	g++ -c $< -o $@ $(WC_OPTS) -fPIC
-
-call_start.o: call_start.asm
+$(OBJS_AGENT_CPP): obj/agent/%.o: src/%.cpp
+	g++ -c $< -o $@ -fPIC -Ielfio $(DEBUG)
+$(OBJS_AGENT_ASM): obj/agent/%.o: src/%.asm
 	as -c $< -o $@
 
-init_agent.o: init_agent.c
-	gcc -g -O3 -c $< -o $@ -fPIC
+$(OBJS_BOOTUP_C): obj/bootup/%.o: src/%.c
+	gcc -c $< -o $@ -fPIC $(DEBUG)
+$(OBJS_BOOTUP_ASM): obj/bootup/%.o: src/%.asm
+	as -c $< -o $@
 
-wrapper.o: injected/wrapper.asm
-	as -c $< -o $@
-	
-syscall.o: syscall.asm
-	as -c $< -o $@
-	
-bootup_agent.o: bootup_agent.asm
-	as -c $< -o $@
-	
-	
-	
+$(OBJS_WALLCLOCK): %.o: src/%.cpp
+	g++ -c $< -o $@ $(DEBUG)
+
+$(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT): Makefile
+
 
 test_agent_0x10000000: test_agent_0x10000000.cpp agent_wh_0x10000000 call_start.o
 	g++ -static $< call_start.o -o $@
@@ -208,16 +191,16 @@ test_agent_anyplace: test_agent_anyplace.cpp pagent.rel
 	
 	
 	
-wallclock: wallclock.o callstep.o agent.so manager.o loader.o unix_io.o call_start.o
+wallclock: wallclock.o callstep.o manager.o loader.o unix_io.o call_start.o agent.so 
 	g++ -o $@ $^ -lpthread -lunwind 
 
 testprog: testprog.cpp largecode.o
 	g++ $^ -o $@ -lpthread
 	
-copy_header: copy_header.cpp
+copy_header: src/copy_header.cpp
 	g++ -o $@ $^ $(WC_OPTS) 
 	
-find_relocs: find_relocs.cpp
+find_relocs: src/find_relocs.cpp
 	g++ -o $@ $^ $(WC_OPTS) 
 	
 init_agent: init_agent.o syscall.o

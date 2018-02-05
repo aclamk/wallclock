@@ -127,7 +127,7 @@ void agent_thread()
   if (auxv_size >= 0 && auxv_size < 4096) {
     fix_auxv((uint64_t*)_stack_top, auxv_size/(sizeof(uint64_t) * 2));
   }
-  apply_relocations(_binary_header_start, (uint32_t)_binary_header_start);
+  apply_relocations((char*)_binary_header_start, (uint32_t)(uint64_t)_binary_header_start);
 
   call_start(_binary_header_start[0],
              (void*)atexit_x, _stack_top, auxv_size);
