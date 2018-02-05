@@ -170,17 +170,17 @@ test_agent_anyplace: test_agent_anyplace.cpp pagent.rel
 	g++ -static $< -o $@
 	
 	
-bin/wallclock: $(OBJS_WALLCLOCK) agent.so 
+bin/wallclock: $(OBJS_WALLCLOCK) agent.so bin
 	g++ -o $@ $(OBJS_WALLCLOCK) agent.so -lpthread -lunwind 
 
-bin/testprog: src/testprog.cpp obj/largecode.o
+bin/testprog: src/testprog.cpp obj/largecode.o bin
 	g++ src/testprog.cpp obj/largecode.o -o $@ -lpthread
 	
 copy_header: src/copy_header.cpp
-	g++ -o $@ $^ $(WC_OPTS) 
+	g++ -o $@ $^ -Ielfio $(DEBUG)
 	
 find_relocs: src/find_relocs.cpp
-	g++ -o $@ $^ $(WC_OPTS) 
+	g++ -o $@ $^ $(DEBUG)
 	
 init_agent: init_agent.o syscall.o
 	g++ -o $@ $^
