@@ -139,10 +139,10 @@ bool load_binary_agent(pid_t remote, uint64_t& unix_id)
   user_regs_struct mmap_result;
   pt.inject_syscall(syscall_rip,[&buf](user_regs_struct& regs){
     regs.rax = SYS_mmap;
-    regs.rdi = 0x10000000;
+    regs.rdi = 0;
     regs.rsi = buf.st_size*2;
     regs.rdx = PROT_READ|PROT_WRITE|PROT_EXEC;
-    regs.r10 = MAP_PRIVATE|MAP_ANON|MAP_FIXED;
+    regs.r10 = MAP_PRIVATE|MAP_ANON|MAP_32BIT;
     regs.r8 = -1;
     regs.r9 = 0;
   }, mmap_result);
