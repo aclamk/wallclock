@@ -174,7 +174,7 @@ $(OBJS_BOOTUP_C): obj/bootup/%.o: src/%.c
 $(OBJS_BOOTUP_ASM): obj/bootup/%.o: src/%.asm
 	as -c $< -o $@
 
-$(OBJS_WALLCLOCK): %.o: src/%.cpp
+$(OBJS_WALLCLOCK): obj/wallclock/%.o: src/%.cpp
 	g++ -c $< -o $@ $(DEBUG)
 
 $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT): Makefile
@@ -190,8 +190,8 @@ test_agent_anyplace: test_agent_anyplace.cpp pagent.rel
 	g++ -static $< -o $@
 	
 	
-	
-wallclock: wallclock.o callstep.o manager.o loader.o unix_io.o call_start.o agent.so 
+#callstep.o call_start.o
+wallclock: $(OBJS_WALLCLOCK)  agent.so 
 	g++ -o $@ $^ -lpthread -lunwind 
 
 testprog: testprog.cpp largecode.o
