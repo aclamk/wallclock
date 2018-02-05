@@ -47,8 +47,7 @@ bin res $(OBJ_DIRS):
 clean:
 	echo $(GCC_MACHINE) $(GCC_VERSION)
 	rm -f $(OBJS)
-res/%: res
-bin/%: bin
+
 testprog: bin/testprog
 wallclock: bin/wallclock
 
@@ -134,7 +133,7 @@ bin/agent.elf: $(OBJS_AGENT) libunwind liblzma bin Makefile
     -o bin/agent.elf $(OBJS_AGENT) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
 
-res/agent.%.elf: $(OBJS_AGENT) libunwind liblzma res Makefile
+res/agent.%.elf: $(OBJS_AGENT) libunwind liblzma Makefile res
 	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -fPIE -fpic -nostdlib -static \
 	-Wl,--start-group $(SOBJS) $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
     -Wl,-Map=res/agent.$*.map -o res/agent.$*.elf 
