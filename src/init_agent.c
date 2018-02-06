@@ -45,17 +45,13 @@ void agent_thread_extract_param();
 void init_agent(uint64_t arg0)
 {
   uint64_t* stack_bottom = (uint64_t*)_stack_bottom;
-
-  pid_t v;
   //execution of child process begins by *return* from syscall after stack is set
-  //setup stack in the middle, so use upper half of stack
   stack_bottom[-2] = (uint64_t)&agent_thread_extract_param;
   stack_bottom[-1] = arg0;
-  v = raw_syscall(SYS_clone, CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM,
+  //CLONE_PARENT makes that parent of profiled process gets sigchild. I hope it will not confuse any daemons.
+  raw_syscall(SYS_clone, CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM | CLONE_PARENT,
                   stack_bottom - 2, 0, 0);
-//  sleep(1);
-//  printf("v=%d\n",v);
-//  sleep(1);
+  //signal agent that init process is done
   raw_syscall(-1, arg0 );
 }
 
