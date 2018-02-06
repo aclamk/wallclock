@@ -59,9 +59,9 @@ int UnixIO::accept(int serv_fd)
         if (errno != EWOULDBLOCK)
           break;
         else
-          usleep(10*1000);
+          usleep(100*1000);
       }
-      i++;
+      //i++;
     } while ((conn_fd == -1) && (i < 100));
   }
 

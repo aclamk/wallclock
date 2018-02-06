@@ -1,4 +1,4 @@
-all: wallclock agent.so pagent.rel
+all: dirs wallclock agent.so pagent.rel
 tests: testprog test_agent_0x10000000 test_agent_anyplace test_agent_relocated
 
 .phony: libunwind liblzma
@@ -40,8 +40,11 @@ OBJS_WALLCLOCK = obj/wallclock/manager.o \
 
 OBJS = $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT)
 OBJ_DIRS = $(sort $(dir $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT)))
-$(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT): $(OBJ_DIRS)
-bin res $(OBJ_DIRS):
+#$(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT): $(OBJ_DIRS)
+
+DIRS = bin res $(OBJ_DIRS)
+dirs: $(DIRS)
+$(DIRS):
 	mkdir -p $@ 
 
 clean:
@@ -127,13 +130,13 @@ pagent.rel: $(POBJS_AGENT) Makefile script-loader
 rel_check: res/rel_0x00112000 res/rel_0x13579000 res/rel_0x2648a000 res/rel_0x18375000
 	 
 	    	
-bin/agent.elf: $(OBJS_AGENT) libunwind liblzma bin Makefile 
+bin/agent.elf: $(OBJS_AGENT) libunwind liblzma Makefile 
 	g++ -fuse-ld=gold -Ttext=0x10001000 -Wl,--start-group -static \
 	-fPIE -fpic -nostdlib $(SOBJS) \
     -o bin/agent.elf $(OBJS_AGENT) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
 
-res/agent.%.elf: $(OBJS_AGENT) libunwind liblzma Makefile res
+res/agent.%.elf: $(OBJS_AGENT) libunwind liblzma Makefile
 	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -fPIE -fpic -nostdlib -static \
 	-Wl,--start-group $(SOBJS) $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
     -Wl,-Map=res/agent.$*.map -o res/agent.$*.elf 
@@ -158,14 +161,17 @@ obj/%.o: src/%.cpp
 
 $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT): Makefile
 
+test_agent_0x10000000: bin/test_agent_0x10000000
+test_agent_relocated: bin/test_agent_relocated
+test_agent_anyplace: bin/test_agent_anyplace
 
-test_agent_0x10000000: test_agent_0x10000000.cpp res/agent_wh_0x10000000 call_start.o
-	g++ -static $< call_start.o -o $@
+bin/test_agent_0x10000000: src/test_agent_0x10000000.cpp res/agent_wh_0x10000000 obj/bootup/call_start.o
+	g++ -static $< obj/bootup/call_start.o -o $@
 
-test_agent_relocated: test_agent_relocated.cpp res/agent_wh_0x00000000 call_start.o rel.bin.o
-	g++ -static $< call_start.o rel.bin.o -o $@
+bin/test_agent_relocated: src/test_agent_relocated.cpp res/agent_wh_0x00000000 obj/bootup/call_start.o rel.bin.o
+	g++ -static $< obj/bootup/call_start.o rel.bin.o -o $@
 
-test_agent_anyplace: test_agent_anyplace.cpp pagent.rel
+bin/test_agent_anyplace: src/test_agent_anyplace.cpp pagent.rel
 	g++ -static $< -o $@
 	
 	

@@ -47,7 +47,7 @@ class Agent
 public:
   static Agent* create();
   void add_thread(thread_sampling_ctx* sc);
-  static int worker(void*);
+  static int worker(void*, pid_t);
   bool scan_libraries(const std::string& excluded_library);
   bool load_symbols(const std::string& library, uint64_t begin);
   std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);
@@ -70,7 +70,7 @@ private:
   std::vector<thread_sampling_ctx*> threads;
   UnixIO io;
   std::map<uint64_t, Symbol> symbols;
-  bool worker();
+  bool worker(pid_t pid);
   int read_command();
   bool dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples);
   bool dump_tree();

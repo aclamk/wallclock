@@ -83,15 +83,21 @@ Agent* the_agent = nullptr;
 pid_t agent_pid = -1;
 int backtrace_reader(void* arg);
 
-
 constexpr size_t stack_size = 1024 * 64;
 char vstack[stack_size];
+
+static int agent_thread(void* ctx)
+{
+  the_agent = Agent::create();//new agent;
+  Agent::worker(the_agent, *(pid_t*)ctx);
+  return true;
+}
 
 void _init_agent()
 {
   the_agent = Agent::create();//new agent;
-  pid_t v;
-  if (clone(Agent::worker, vstack + stack_size,
+  pid_t v = getpid();
+  if (clone(agent_thread, vstack + stack_size,
                  CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM,
             the_agent, &v) == -1) {
     _remote_return(0);
@@ -453,64 +459,72 @@ bool Agent::probe()
 }
 
 
-bool Agent::worker()
+bool Agent::worker(pid_t pid)
 {
 
   int server_fd;
   int conn_fd;
-  server_fd = io.server(111111);
+  server_fd = io.server(pid);
   printf("server_fd=%d\n",server_fd);
-  conn_fd = io.accept(server_fd);
-  close(server_fd);
 
-  int r;
-  bool do_continue = true;
-  while (do_continue)
+  bool exit_command = false;
+  do
   {
-    r = io.wait_read();
-    if (r == -EINTR)
+    printf("---- waiting connect ----\n");
+    conn_fd = io.accept(server_fd);
+    printf("conn_fd=%d\n", conn_fd);
+    int r;
+    bool do_continue = true;
+
+    while (do_continue)
     {
-      //scan through
-      for (auto &it:threads)
+      r = io.wait_read();
+      if (r == -EINTR)
       {
-        it->peek();
+        //scan through
+        for (auto &it:threads)
+        {
+          it->peek();
+        }
       }
-    }
-    if (r>0)
-    {
-      uint8_t cmd;
-      if (!io.read_bytes(&cmd,sizeof(uint8_t)))
+      if (r>0)
       {
-        do_continue = false;
-        break;
-      }
-      switch(cmd)
-      {
-        case CMD_TERMINATE:
+        uint8_t cmd;
+        if (!io.read_bytes(&cmd,sizeof(uint8_t)))
+        {
           do_continue = false;
           break;
+        }
+        switch(cmd)
+        {
+          case CMD_TERMINATE:
+            do_continue = false;
+            break;
 
-        case CMD_DUMP_TREE:
-          if (!dump_tree())
-            do_continue = false;
-          break;
-        case CMD_TRACE_ATTACH:
-          if (!trace_attach())
-            do_continue = false;
-          break;
-        case CMD_PROBE:
-          probe();
-          uint32_t confirm = 0;
-          do_continue = io.write(confirm);
-          for (auto &it:threads)
-          {
-            it->peek();
-          }
-          break;
+          case CMD_DUMP_TREE:
+            if (!dump_tree())
+              do_continue = false;
+            break;
+          case CMD_TRACE_ATTACH:
+            if (!trace_attach())
+              do_continue = false;
+            break;
+          case CMD_PROBE:
+            probe();
+            uint32_t confirm = 0;
+            do_continue = io.write(confirm);
+            for (auto &it:threads)
+            {
+              it->peek();
+            }
+            break;
+        }
       }
     }
-  }
-  close(conn_fd);
+    close(conn_fd);
+  } while (exit_command == false);
+  printf("exit_command done\n");
+  close(server_fd);
   return true;
 }
 
@@ -617,31 +631,27 @@ std::pair<std::string, int64_t> Agent::get_symbol(uint64_t ip_addr)
 }
 
 
-int Agent::worker(void* arg)
+int Agent::worker(void* arg, pid_t pid)
 {
   Agent* an_agent = (Agent*)arg;
 
   an_agent->scan_libraries("agent.so");
 
-  an_agent->worker();
+  an_agent->worker(pid);
   delete an_agent;
   syscall(SYS_exit, 0);
   return 0;
 }
 
-#if 0
-extern "C" void __tls_get_addr(void);
-
-void __tls_get_addr()
-{
-*(char*)0 = 0;
-}
-#endif
 int main(int argc, char** argv)
 {
   printf("here!!!\n");
-  the_agent = Agent::create();//new agent;
-  Agent::worker(the_agent);
+  pid_t pid = 0;
+  if (argc>1) {
+    pid = (uint64_t)argv[1];
+  }
+  the_agent = Agent::create();
+  Agent::worker(the_agent, pid);
 }
 
 

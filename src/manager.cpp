@@ -50,18 +50,18 @@ int monitored_thread::inject_func(user_regs_struct& regs,
   return ret;
 }
 
-bool monitored_thread::execute_init(uint64_t init_addr)
+bool monitored_thread::execute_init(uint64_t init_addr, uint64_t connection_id)
 {
   int ret = 0;
   user_regs_struct regs;
   if (!read_regs(regs)) return false;
   regs.rsp -= ( 128 + 8);
   if (ret == 0)
-    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rax);
+    ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rdi);
   regs.rsp -= 8;
   if (ret == 0)
     ret = ptrace(PTRACE_POKEDATA, m_target, (uint64_t*)(regs.rsp), (void*)regs.rip);
-  regs.rax = 0xfee1fab; //this will mean init was called from remote
+  regs.rdi = connection_id;//0xfee1fab; //this will mean init was called from remote
   regs.rip = init_addr;
   if (ret == 0)
     ret = ptrace(PTRACE_SETREGS, m_target, nullptr, &regs);
@@ -472,14 +472,14 @@ bool monitored_thread::locate_syscall(uint64_t* syscall_eip)
 }
 
 bool monitored_thread::execute_remote(interruption_func* func,
-                                  uint64_t* res1)
+                                  uint64_t arg1)
 {
   user_regs_struct regs;
   if (!pause(regs))
     return false;
-  if (0 != inject_func(regs, func, 0, 0, 0))
+  if (0 != inject_func(regs, func, arg1, 0, 0))
     return false;
-  if (!wait_return(res1, nullptr, nullptr))
+  if (!wait_return(nullptr, nullptr, nullptr))
     return false;
   return true;
 }

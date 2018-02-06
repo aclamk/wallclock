@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <stdio.h>
 
-extern "C" void call_start(void*, void*, void*, int);
+extern "C" void call_start(void (*entry_point)(), void (*exit_func)(), void* auxv, int auxv_size, int);
 void atexit_x() {}
 
 int load_agent(void*)
@@ -24,7 +24,7 @@ int load_agent(void*)
   printf("auxv_size=%d\n",auxv_size);
 
 
-  int fd = open("agent_wh_0x10000000",O_RDONLY);
+  int fd = open("res/agent_wh_0x10000000",O_RDONLY);
   printf("fd=%d\n",fd);
   int res;
   struct stat buf;
@@ -47,8 +47,8 @@ int load_agent(void*)
     if (p[i*2] == 5) p[i*2+1] = *(uint64_t*)(ptr+8);
   }
 
-
-  call_start((void*)*(uint64_t*)(ptr), (void*)atexit_x, auxv, auxv_size);
+  uint64_t entry_addr = *(uint64_t*)ptr;
+  call_start((void(*)())entry_addr, (void(*)())atexit_x, auxv, auxv_size, 65536);
   printf("init call ended\n");
 }
 constexpr size_t stack_size = 1024 * 64;

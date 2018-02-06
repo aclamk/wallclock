@@ -12,6 +12,7 @@ L1:
 call_start:
 	//arg3 - rdx, auxv
 	//arg4 - rcx, auxv_size
+	//arg5 - r8, traced_process_pid
 	sub %rcx, %rsp
 	add %rcx, %rdx
 1:
@@ -30,8 +31,9 @@ call_start:
 //	pushq $L0
 	pushq $0
 	lea    L1(%rip),%rcx
+	pushq %r8
 	pushq %rcx
 //	pushq $L1
-	pushq $1
+	pushq $2
 	jmp *%rax
 

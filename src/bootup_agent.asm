@@ -1,15 +1,14 @@
-//.section .mysection
 .text
 .globl init_agent
 .align 16
 entry_point:
-	//if called by injection from tracer then rax == 0xfee1fab
+	//if called by injection from tracer then rdi == 0
 	//  and stack contains:
 	//rsp + 8 + 128 ... rsp + 8 = scratch space
-	//rsp + 8 = original rax
+	//rsp + 8 = original rdi
 	//rsp:    = return address
 	//
-	//if called (testing) by directly invoking this, rax == 0
+	//if called (testing) by directly invoking this, rdi != 0
 	//  and stack contains:
 	//rsp:    = return address
 	push %rbp
@@ -55,10 +54,16 @@ entry_point:
 	popf
 	pop %rax
 	pop %rbp
-	cmp $0xfee1fab,%rax
-	je 1f
+	cmp $0,%rdi
+	jne 1f
 	ret
 1:
-	mov 8(%rsp), %rax
+	mov 8(%rsp), %rdi
 	ret $128+8
+
+.globl agent_thread
+.globl agent_thread_extract_param
+agent_thread_extract_param:
+	pop %rdi
+	jmp agent_thread
 

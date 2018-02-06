@@ -38,24 +38,25 @@ extern char _binary_agent_nh_bin_start[0];
 extern char _binary_agent_nh_bin_end[0];
 
 long int raw_syscall (long int __sysno, ...);
-void agent_thread();
+void agent_thread_extract_param();
 
 //char stack[65536];
 
-void init_agent()
+void init_agent(uint64_t arg0)
 {
   uint64_t* stack_bottom = (uint64_t*)_stack_bottom;
 
   pid_t v;
   //execution of child process begins by *return* from syscall after stack is set
   //setup stack in the middle, so use upper half of stack
-  stack_bottom[-1] = (uint64_t)&agent_thread;
+  stack_bottom[-2] = (uint64_t)&agent_thread_extract_param;
+  stack_bottom[-1] = arg0;
   v = raw_syscall(SYS_clone, CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM,
-                  stack_bottom - 1, 0, 0);
+                  stack_bottom - 2, 0, 0);
 //  sleep(1);
 //  printf("v=%d\n",v);
 //  sleep(1);
-  raw_syscall(-1, 111111 );
+  raw_syscall(-1, arg0 );
 }
 
 //extern "C" void* agent_binary_begin;
@@ -107,8 +108,8 @@ void apply_relocations(char* image_position, uint32_t diff)
     rel++;
   }
 }
-
-//void call_agent()
+//void call_start();
+void call_start(void (*entry_point)(), void (*exit_func)(), void* auxv, int auxv_size, int);
 //{
 //  ((void (*)())((uint32_t)_binary_agent_bin_start + _binary_header_start[0]))();
 //}
@@ -117,7 +118,7 @@ void atexit_x() {
 
 }
 
-void agent_thread()
+void agent_thread(uint64_t connection_id)
 {
   struct timespec rqtp; //= { 40, 0 };
   rqtp.tv_sec = 30;
@@ -129,8 +130,8 @@ void agent_thread()
   }
   apply_relocations((char*)_binary_header_start, (uint32_t)(uint64_t)_binary_header_start);
 
-  call_start(_binary_header_start[0],
-             (void*)atexit_x, _stack_top, auxv_size);
+  call_start((void (*)())_binary_header_start[0], (void (*)())atexit_x,
+             _stack_top, auxv_size, connection_id);
   //call_agent(_stack_top, auxv_size);
 }
 

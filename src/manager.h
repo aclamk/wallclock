@@ -69,7 +69,7 @@ public:
   bool pause_after_syscall(user_regs_struct& regs);
   bool pause_outside_syscall();
   bool execute_remote(interruption_func* func,
-                      uint64_t* res1);
+                      uint64_t arg1);
   bool wait_status(int* wstatus);
   bool inject_syscall(std::function<void(user_regs_struct&)> prepare_regs,
                       user_regs_struct& result);
@@ -77,7 +77,7 @@ public:
                       std::function<void(user_regs_struct&)> prepare_regs,
                       user_regs_struct& result);
   bool locate_syscall(uint64_t* syscall_rip);
-  bool execute_init(uint64_t init_addr);
+  bool execute_init(uint64_t init_addr, uint64_t connection_id);
 };
 
 class Manager
