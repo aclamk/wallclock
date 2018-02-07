@@ -36,7 +36,7 @@ public:
   static thread_sampling_ctx* create();
   void peek();
   void consume();
-  bool dump_tree(UnixIO& io,uint32_t total_samples);
+  bool dump_tree(UnixIO& io,uint32_t total_samples, double suppress);
 };
 
 
@@ -56,7 +56,8 @@ public:
     CMD_TERMINATE=3,
     CMD_DUMP_TREE=4,
     CMD_TRACE_ATTACH=6,
-    CMD_PROBE=7
+    CMD_PROBE=7,
+    CMD_READ_SYMBOLS=8
   };
 
 private:
@@ -72,7 +73,7 @@ private:
   std::map<uint64_t, Symbol> symbols;
   bool worker(pid_t pid);
   int read_command();
-  bool dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples);
+  bool dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples, double suppress);
   bool dump_tree();
   bool indirect_backtrace();
   bool trace_attach();

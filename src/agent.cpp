@@ -225,22 +225,8 @@ void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ct
       conv->advance(count);
       sc->backtrace_collected++;
     }
-#if 0
-    if (conv->produce_avail() < conv->size/2)
-    {
-      //make sure reader is notified
-      uint8_t notif;
-      notif = conv->notified.exchange(conv->notified_signalled);
-      if (notif == conv->notified_none)
-      {
-        //transition from not-signalled to signalled
-        syscall(SYS_tkill, agent_pid, SIGUSR1);
-      }
-    }
-#endif
     local_assert(sc->lock.exchange(false) == true);
   }
-  //printf("get_backtrace end \n");
 }
 
 thread_sampling_ctx::thread_sampling_ctx(size_t size)
@@ -305,10 +291,10 @@ void thread_sampling_ctx::peek()
 
 
 
-bool thread_sampling_ctx::dump_tree(UnixIO& io, uint32_t total_samples)
+bool thread_sampling_ctx::dump_tree(UnixIO& io, uint32_t total_samples, double suppress)
 {
   bool res;
-  res = root->dump_tree(0, io, total_samples);
+  res = root->dump_tree(0, io, total_samples, suppress);
   uint32_t depth = 0xffffffff;
   if (res) io.write(depth);
   return res;
@@ -316,51 +302,51 @@ bool thread_sampling_ctx::dump_tree(UnixIO& io, uint32_t total_samples)
 
 
 
-bool Agent::dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples)
+bool Agent::dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples, double suppress)
 {
-  tsx->dump_tree(io, total_samples);
+  tsx->dump_tree(io, total_samples, suppress);
   return true;
 }
 
 bool Agent::dump_tree()
 {
   pid_t tid;
+  double suppress;
   bool res = false;
-  if (io.read(tid))
+  if (!io.read(tid)) return false;
+  if (!io.read(suppress)) return false;
+  size_t i=0;
+  for (i=0;i<threads.size();i++)
   {
-    size_t i=0;
-    for (i=0;i<threads.size();i++)
-    {
-      if (threads[i]->tid == tid) break;
-    }
-    local_assert (i != threads.size());
-    thread_sampling_ctx* tsx = threads[i];
-    tsx -> consume();
-
-    //cat /proc/8805/stat
-    int name;
-    int f;
-    int s;
-    char fname[25];
-    char stat[100];
-    sprintf(fname, "/proc/%d/stat", tid);
-    f = open(fname, O_RDONLY);
-    s = read(f, stat, 99);
-    close(f);
-    if (s >= 0) stat[s] = 0;
-    char *pb, *pe;
-    pb = strchr(stat, '(');
-    pe = strchr(pb, ')');
-    std::string tid_name;
-    if (pb && pe)
-    {
-      tid_name = std::string(pb + 1, pe - pb - 1);
-    }
-    res = io.write(tid_name);
-    if (res) res = io.write(tsx->root->hit_count);
-    if (res) res = io.write(tsx->time_suspended);
-    if (res) res = dump_tree(tsx, tsx->root->hit_count);
+    if (threads[i]->tid == tid) break;
   }
+  local_assert (i != threads.size());
+  thread_sampling_ctx* tsx = threads[i];
+  tsx -> consume();
+
+  int name;
+  int f;
+  int s;
+  char fname[25];
+  char stat[100];
+  sprintf(fname, "/proc/%d/stat", tid);
+  f = open(fname, O_RDONLY);
+  s = read(f, stat, 99);
+  close(f);
+  if (s >= 0) stat[s] = 0;
+  char *pb, *pe;
+  pb = strchr(stat, '(');
+  pe = strchr(pb, ')');
+  std::string tid_name;
+  if (pb && pe)
+  {
+    tid_name = std::string(pb + 1, pe - pb - 1);
+  }
+  res = io.write(tid_name);
+  if (res) res = io.write(tsx->root->hit_count);
+  if (res) res = io.write(tsx->time_suspended);
+  if (res) res = dump_tree(tsx, tsx->root->hit_count, suppress);
+
   return res;
 }
 
@@ -458,75 +444,6 @@ bool Agent::probe()
   return true;
 }
 
-
-bool Agent::worker(pid_t pid)
-{
-
-  int server_fd;
-  int conn_fd;
-  server_fd = io.server(pid);
-  printf("server_fd=%d\n",server_fd);
-
-  bool exit_command = false;
-  do
-  {
-    printf("---- waiting connect ----\n");
-    conn_fd = io.accept(server_fd);
-    printf("conn_fd=%d\n", conn_fd);
-    int r;
-    bool do_continue = true;
-
-    while (do_continue)
-    {
-      r = io.wait_read();
-      if (r == -EINTR)
-      {
-        //scan through
-        for (auto &it:threads)
-        {
-          it->peek();
-        }
-      }
-      if (r>0)
-      {
-        uint8_t cmd;
-        if (!io.read_bytes(&cmd,sizeof(uint8_t)))
-        {
-          do_continue = false;
-          break;
-        }
-        switch(cmd)
-        {
-          case CMD_TERMINATE:
-            do_continue = false;
-            break;
-
-          case CMD_DUMP_TREE:
-            if (!dump_tree())
-              do_continue = false;
-            break;
-          case CMD_TRACE_ATTACH:
-            if (!trace_attach())
-              do_continue = false;
-            break;
-          case CMD_PROBE:
-            probe();
-            uint32_t confirm = 0;
-            do_continue = io.write(confirm);
-            for (auto &it:threads)
-            {
-              it->peek();
-            }
-            break;
-        }
-      }
-    }
-    close(conn_fd);
-  } while (exit_command == false);
-  printf("exit_command done\n");
-  close(server_fd);
-  return true;
-}
 
 
 bool Agent::scan_libraries(const std::string& excluded_library)
@@ -631,12 +548,87 @@ std::pair<std::string, int64_t> Agent::get_symbol(uint64_t ip_addr)
 }
 
 
+bool Agent::worker(pid_t pid)
+{
+  int server_fd;
+  int conn_fd;
+  server_fd = io.server(pid);
+  printf("server_fd=%d\n",server_fd);
+
+  bool exit_command = false;
+  do
+  {
+    printf("---- waiting connect ----\n");
+    conn_fd = io.accept(server_fd);
+    printf("conn_fd=%d\n", conn_fd);
+    int r;
+    bool do_continue = true;
+
+    while (do_continue)
+    {
+      r = io.wait_read();
+      if (r == -EINTR)
+      {
+        //scan through
+        for (auto &it:threads)
+        {
+          it->peek();
+        }
+      }
+      if (r>0)
+      {
+        uint8_t cmd;
+        if (!io.read_bytes(&cmd,sizeof(uint8_t)))
+        {
+          do_continue = false;
+          break;
+        }
+        switch(cmd)
+        {
+          case CMD_TERMINATE:
+            do_continue = false;
+            break;
+
+          case CMD_DUMP_TREE:
+            if (!dump_tree())
+              do_continue = false;
+            break;
+          case CMD_TRACE_ATTACH:
+            if (!trace_attach())
+              do_continue = false;
+            break;
+          case CMD_PROBE:
+          {
+            probe();
+            uint32_t confirm = 0;
+            do_continue = io.write(confirm);
+            for (auto &it:threads)
+            {
+              it->peek();
+            }
+            break;
+          }
+          case CMD_READ_SYMBOLS:
+          {
+            scan_libraries("agent.so");
+            uint32_t confirm = 0;
+            do_continue = io.write(confirm);
+            break;
+          }
+        }
+      }
+    }
+    close(conn_fd);
+  } while (exit_command == false);
+  printf("exit_command done\n");
+  close(server_fd);
+  return true;
+}
+
+
 int Agent::worker(void* arg, pid_t pid)
 {
   Agent* an_agent = (Agent*)arg;
-
-  an_agent->scan_libraries("agent.so");
-
   an_agent->worker(pid);
   delete an_agent;
   syscall(SYS_exit, 0);

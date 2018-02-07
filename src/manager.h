@@ -86,11 +86,12 @@ public:
   UnixIO io;
 
   bool trace_thread_new(uint64_t& sc);
-  bool dump_tree(pid_t tid);
+  bool dump_tree(std::ostream& output, pid_t tid, double suppress);
 
   bool indirect_backtrace(uint64_t sc, uint64_t rip, uint64_t rbp, uint64_t rsp);
   bool trace_attach(pid_t pid);
   bool probe();
+  bool read_symbols();
 };
 
 void execute_command();

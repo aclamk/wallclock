@@ -37,7 +37,7 @@ public:
   static std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);
 
   callstep* find_function(uint64_t ip_addr);
-  bool dump_tree(uint32_t depth, UnixIO& io, uint32_t total_samples);
+  bool dump_tree(uint32_t depth, UnixIO& io, uint32_t total_samples, double suppress);
 };
 
 

@@ -494,7 +494,7 @@ bool connect_client(uint64_t socket_hash)
   return false;
 }
 
-bool Manager::dump_tree(pid_t tid)
+bool Manager::dump_tree(std::ostream& output, pid_t tid, double suppress)
 {
   uint64_t hit_count;
   uint64_t total_samples;
@@ -504,14 +504,15 @@ bool Manager::dump_tree(pid_t tid)
   bool res = false;
   res = io.write(cmd);
   if (res) res = io.write(tid);
+  if (res) res = io.write(suppress);
 
   std::string tid_name;
   res = io.read(tid_name);
   if (res) res = io.read(total_samples);
   if (res) res = io.read(time_suspended);
-  std::cout << "Thread: " << tid << " (" << tid_name << ") - " << total_samples << " samples, time suspended=" <<
+  output << "Thread: " << tid << " (" << tid_name << ") - " << total_samples << " samples, time suspended=" <<
       time_suspended/(1000*1000) << "ms" << std::endl;
-  std::cout << std::endl;
+  output << std::endl;
   std::vector<uint32_t> depths;
 
   uint32_t depth;
@@ -532,9 +533,9 @@ bool Manager::dump_tree(pid_t tid)
         for(size_t i = 0; i < depth - 1; i++)
         {
           if (depths[i] == 0)
-            std::cout << "  ";
+            output << "  ";
           else
-            std::cout << "| ";
+            output << "| ";
         }
         double d = hit_count * 100. / total_samples;
         char str[10];
@@ -543,7 +544,7 @@ bool Manager::dump_tree(pid_t tid)
         char   *realname;
 
         realname = abi::__cxa_demangle(name.c_str(), 0, 0, &status);
-        std::cout << "+ " << str << "% " <<
+        output << "+ " << str << "% " <<
             (status == 0 ? realname : name.c_str()) << std::endl;
         free(realname);
         depths[depth - 1]--;
@@ -551,7 +552,7 @@ bool Manager::dump_tree(pid_t tid)
     }
   }
   while (res && depth != 0xffffffff);
-  std::cout << std::endl;
+  output << std::endl;
   return res;
 }
 
@@ -573,3 +574,15 @@ bool Manager::probe()
   if (res) res = io.read(confirm);
   return res;
 }
+
+bool Manager::read_symbols()
+{
+  bool res;
+  int8_t cmd = Agent::CMD_READ_SYMBOLS;
+  uint32_t confirm;
+  res = io.write(cmd);
+  if (res) res = io.read(confirm);
+  return res;
+}
+
+

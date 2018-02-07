@@ -37,6 +37,7 @@
 
 #include <getopt.h>
 #include <string.h>
+#include <fstream>
 uint64_t now()
 {
   struct timespec t;
@@ -94,12 +95,6 @@ bool probe(Manager& mgr)
     iter++;
   }
   while(stop_probing.load() == false && (current_time - begin) < (uint64_t)sampling_time * 1000 * 1000 * 1000);
-
-  for (size_t i=0; i<tids.size(); i++)
-  {
-    mgr.dump_tree(tids[i]);
-  }
-
 }
 
 
@@ -114,7 +109,9 @@ void stop_sampling(int signum, siginfo_t *info, void *ctx)
 
 int main(int argc, char** argv)
 {
-
+  std::ofstream outfile;
+  std::ostream* output = &std::cout;
+  double suppress = 0;
   int i = 1;
   argc--; argv++;
 
@@ -163,6 +160,50 @@ int main(int argc, char** argv)
       }
     }
 
+    if(strcmp(*argv, "-o") == 0)
+    {
+      if (argc >= 2)
+      {
+        argc--; argv++;
+        outfile = std::ofstream(*argv,std::ofstream::binary|std::ofstream::trunc);
+        if (!outfile.good()) {
+          std::cerr << "Cannot open '" << *argv << "'" << std::endl;
+          exit(-1);
+        } else {
+          output = &outfile;
+        }
+        argc--; argv++;
+        continue;
+      }
+      else
+      {
+        std::cerr << "Option -o requires parameter" << std::endl;
+        exit(-1);
+      }
+    }
+
+    if(strcmp(*argv, "-s") == 0)
+    {
+      if (argc >= 2)
+      {
+        argc--; argv++;
+        char* endp;
+        suppress = strtod(*argv, &endp);
+        if (*endp != '\0') {
+          std::cerr << "Invalid float '" << *argv << "'" << std::endl;
+          exit(-1);
+        }
+        suppress = suppress / 100;
+        argc--; argv++;
+        continue;
+      }
+      else
+      {
+        std::cerr << "Option -s requires parameter" << std::endl;
+        exit(-1);
+      }
+    }
+
     //non-prefixed parameter = pid
     char* endptr;
     pid_t tid;
@@ -193,5 +234,14 @@ int main(int argc, char** argv)
   stop_sampling_sig.sa_sigaction = stop_sampling;
   sigaction(SIGINT, &stop_sampling_sig, nullptr);
 
+  mgr.read_symbols();
   probe(mgr);
+  for (size_t i=0; i<tids.size(); i++) {
+    mgr.dump_tree(*output, tids[i], suppress);
+  }
+
+  if (outfile.is_open()) {
+    outfile.close();
+  }
+
 }
