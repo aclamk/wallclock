@@ -23,6 +23,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/uio.h>
+#include <vector>
+#include <dirent.h>
+
 
 extern RemoteAPI agent_interface;
 RemoteAPI agent_interface_remote;
@@ -96,6 +99,29 @@ pid_t find_leader_thread(pid_t pid)
   return leader_pid;
 }
 
+std::vector<pid_t> list_threads_in_group(pid_t pid)
+{
+  std::vector<pid_t> threads;
+  std::string proc_tasks = "/proc/" + std::to_string(pid) + "/task";
+  DIR *dir;
+  struct dirent *ent;
+  if ((dir = opendir (proc_tasks.c_str())) != nullptr)
+  {
+    while ((ent = readdir (dir)) != NULL)
+    {
+      char* endptr;
+      int tid = strtol(ent->d_name, &endptr, 10);
+      if (*endptr== '\0')
+      {
+        threads.push_back(tid);
+      }
+    }
+    closedir (dir);
+  }
+  return threads;
+}
+
+
 extern RemoteAPI agent_interface;
 
 bool init_agent_so(pid_t remote, pid_t remote_leader)
@@ -117,9 +143,20 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
   agent_interface_remote = agent_interface;
   agent_interface_remote._init_agent += diff;
   agent_interface_remote._wc_inject += diff;
-
+  std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
   monitored_thread pt;
-  if (!pt.seize(remote))
+  size_t i;
+  for(i = 0; i < threads_in_group.size(); i++)
+  {
+    if (pt.seize(threads_in_group[i])) {
+      if (pt.pause_outside_syscall()) {
+        break;
+      } else {
+        pt.detach();
+      }
+    }
+  }
+  if (i == threads_in_group.size())
   {
     std::cerr << "Target " << remote << " cannot be sized" << std::endl;
     return false;
@@ -137,12 +174,34 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
 
 bool load_binary_agent(pid_t remote, pid_t remote_leader)
 {
-  monitored_thread pt;
-  int conn_fd;
-  if (!pt.seize(remote)) {
-    std::cerr << "Target " << remote << " cannot be sized" << std::endl;
-    return false;
+  uint64_t syscall_rip;
+  std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
+  size_t i;
+  for(i = 0; i < threads_in_group.size(); i++)
+  {
+    monitored_thread pt;
+    if (pt.seize(threads_in_group[i])) {
+      pt.locate_syscall(&syscall_rip);
+      pt.detach();
+      break;
+    }
   }
+  if (i == threads_in_group.size())
+    return false; //was not able to locate place of rip
+
+  monitored_thread pt;
+  for(i = 0; i < threads_in_group.size(); i++)
+  {
+    if (pt.seize(threads_in_group[i])) {
+      if (pt.pause_outside_syscall()) {
+        break;
+      } else {
+        pt.detach();
+      }
+    }
+  }
+  if (i == threads_in_group.size())
+    return false; //was not able to connect to any of threads
 
   int res;
   char* local_image;
@@ -160,9 +219,6 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader)
   }
 
   user_regs_struct regs;
-  uint64_t syscall_rip;
-  if (!pt.locate_syscall(&syscall_rip)) return false;
-  if (!pt.pause_outside_syscall()) return false;
   user_regs_struct mmap_result;
   pt.inject_syscall(syscall_rip,[&buf](user_regs_struct& regs){
     regs.rax = SYS_mmap;

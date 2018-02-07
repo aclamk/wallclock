@@ -350,7 +350,12 @@ bool monitored_thread::pause_outside_syscall()
   {
     int wstatus;
     if (!single_step()) return false;
-    if (!wait_status(&wstatus)) return false;
+    if (!wait_status(&wstatus)) {
+      signal_interrupt();
+      wait_status(&wstatus);
+      cont();
+      return false;
+    }
     if (!WIFSTOPPED(wstatus)) return false;
     if (!read_regs(regs)) return false;
     errno = 0;
