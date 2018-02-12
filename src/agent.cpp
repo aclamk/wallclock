@@ -316,10 +316,11 @@ bool Agent::dump_tree()
   if (!io.read(tid)) return false;
   if (!io.read(suppress)) return false;
   size_t i=0;
-  for (i=0;i<threads.size();i++)
+  for (i=0; i<threads.size(); i++)
   {
     if (threads[i]->tid == tid) break;
   }
+
   local_assert (i != threads.size());
   thread_sampling_ctx* tsx = threads[i];
   tsx -> consume();
@@ -346,7 +347,6 @@ bool Agent::dump_tree()
   if (res) res = io.write(tsx->root->hit_count);
   if (res) res = io.write(tsx->time_suspended);
   if (res) res = dump_tree(tsx, tsx->root->hit_count, suppress);
-
   return res;
 }
 
@@ -377,9 +377,23 @@ bool Agent::ptrace_attach(pid_t pid)
 
 bool Agent::ptrace_detach(pid_t pid)
 {
+  int wstatus;
   int res;
+  res = ptrace(PTRACE_INTERRUPT, pid, 0, 0);
+  waitpid(pid, &wstatus, 0);
   res = ptrace(PTRACE_DETACH, pid, 0, 0);
   return res==0;
+}
+
+bool Agent::detach_threads()
+{
+  for(auto &i:threads)
+  {
+    ptrace_detach(i->tid);
+    delete(i);
+  }
+  threads.resize(0);
+  return true;
 }
 
 uint64_t now()
@@ -619,6 +633,7 @@ bool Agent::worker(pid_t pid)
       }
     }
     close(conn_fd);
+    detach_threads();
   } while (exit_command == false);
   printf("exit_command done\n");
   close(server_fd);

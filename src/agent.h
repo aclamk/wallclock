@@ -79,6 +79,7 @@ private:
   bool trace_attach();
   bool ptrace_attach(pid_t pid);
   bool ptrace_detach(pid_t pid);
+  bool detach_threads();
 
   bool probe();
   friend int backtrace_reader(void* arg);
