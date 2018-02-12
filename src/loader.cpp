@@ -25,7 +25,7 @@
 #include <sys/uio.h>
 #include <vector>
 #include <dirent.h>
-
+#include <thread>
 
 extern RemoteAPI agent_interface;
 RemoteAPI agent_interface_remote;
@@ -192,7 +192,7 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader)
   monitored_thread pt;
   for(i = 0; i < threads_in_group.size(); i++)
   {
-    if (pt.seize(threads_in_group[i])) {
+    if (pt.attach(threads_in_group[i])) {
       if (pt.pause_outside_syscall()) {
         break;
       } else {
@@ -229,7 +229,6 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader)
     regs.r8 = -1;
     regs.r9 = 0;
   }, mmap_result);
-  printf("rax=%llx\n", mmap_result.rax);
   if (mmap_result.rax == -1) return false;
   char* remote_image = (char*) mmap_result.rax;
   struct iovec local_iov;
@@ -240,17 +239,12 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader)
   remote_iov.iov_len = buf.st_size;
 
   res = process_vm_writev(remote, &local_iov, 1, &remote_iov, 1, 0);
-  printf("res=%d remote_leader=%d\n",res, remote_leader);
   pt.execute_init((uint64_t)remote_image, remote_leader);
-  //uint64_t unix_id;
   pt.wait_return();
   pt.detach();
 
-  //int64_t diff = (uint64_t)remote_agent_so - (uint64_t)my_agent_so;
-
   agent_interface_remote = agent_interface;
   agent_interface_remote._init_agent = 0x10000000;
-  //agent_interface_remote._wc_inject += diff;
 
   return true;
 }
@@ -274,7 +268,11 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so)
         return false;
       }
     } else {
-      bool b = load_binary_agent(remote, remote_leader);
+      bool b;
+      std::thread loader([&](){
+        b = load_binary_agent(remote, remote_leader);
+      });
+      loader.join();
       if (!b) {
         std::cerr << "Failed to load wallclock agent to remote" << std::endl;
         return false;

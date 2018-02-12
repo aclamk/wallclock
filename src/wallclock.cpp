@@ -224,7 +224,7 @@ int main(int argc, char** argv)
   }
 
   Manager mgr;
-  init_agent_interface(mgr, tids[0], false);
+  //init_agent_interface(mgr, tids[0], false);
 
   struct sigaction stop_sampling_sig;
 
@@ -233,6 +233,8 @@ int main(int argc, char** argv)
   stop_sampling_sig.sa_flags = SA_SIGINFO | SA_RESTART;
   stop_sampling_sig.sa_sigaction = stop_sampling;
   sigaction(SIGINT, &stop_sampling_sig, nullptr);
+
+  init_agent_interface(mgr, tids[0], false);
 
   mgr.read_symbols();
   probe(mgr);

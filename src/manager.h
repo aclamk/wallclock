@@ -49,6 +49,7 @@ public:
                             uint64_t arg2 = 0,
                             uint64_t arg3 = 0);
 public:
+  bool attach(pid_t target);
   bool seize(pid_t target);
   bool detach();
   bool signal_interrupt();
@@ -66,11 +67,10 @@ public:
   void set_remote_context(uint64_t remote_context);
 
   bool pause(user_regs_struct& regs);
-  bool pause_after_syscall(user_regs_struct& regs);
   bool pause_outside_syscall();
   bool execute_remote(interruption_func* func,
                       uint64_t arg1);
-  bool wait_status(int* wstatus);
+  bool wait_status(int* wstatus, uint32_t timeout = 100000);
   bool inject_syscall(std::function<void(user_regs_struct&)> prepare_regs,
                       user_regs_struct& result);
   bool inject_syscall(uint64_t syscall_rip,

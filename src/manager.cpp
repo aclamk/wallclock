@@ -25,6 +25,10 @@
 #include <cxxabi.h>
 #include "agent.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 int monitored_thread::inject_func(user_regs_struct& regs,
                                        interruption_func func,
                                        uint64_t arg1, uint64_t arg2, uint64_t arg3)
@@ -81,7 +85,8 @@ bool monitored_thread::seize(pid_t target)
     if (!signal_interrupt()) ret = -1;
   }
   if (ret == 0) {
-    if (waitpid(m_target, nullptr, 0) != m_target) ret = -1;
+    int wstatus;
+    if (!wait_status(&wstatus)) ret = -1;
   }
   if (ret == 0) {
     ret = ptrace(PTRACE_SETOPTIONS, m_target, 0, PTRACE_O_TRACESYSGOOD);
@@ -92,13 +97,33 @@ bool monitored_thread::seize(pid_t target)
   return (ret == 0);
 }
 
+bool monitored_thread::attach(pid_t target)
+{
+  if (m_target != 0)
+    detach();
+  m_target = target;
+  long ret;
+  ret = ptrace(PTRACE_ATTACH, m_target, nullptr, nullptr);
+  if (ret == 0) {
+    int wstatus;
+    if (!wait_status(&wstatus)) {
+      ret = -1;
+    }
+  }
+  if (ret == 0) {
+    ret = ptrace(PTRACE_SETOPTIONS, m_target, 0, PTRACE_O_TRACESYSGOOD);
+  }
+  return (ret == 0);
+}
+
 bool monitored_thread::detach()
 {
   long ret;
   ret = ptrace(PTRACE_INTERRUPT, m_target, nullptr, nullptr);
   if (ret == 0)
   {
-    waitpid(m_target, nullptr, 0);
+    int wstatus;
+    if (!wait_status(&wstatus)) ret = -1;
     ret = ptrace(PTRACE_DETACH, m_target, nullptr, nullptr);
   }
   m_target = 0;
@@ -115,21 +140,21 @@ bool monitored_thread::signal_interrupt()
 bool monitored_thread::cont()
 {
   long ret;
-  ret = ptrace(PTRACE_CONT, m_target, nullptr, nullptr);
+  ret = ptrace(PTRACE_CONT, m_target, 0, nullptr);
   return (ret == 0);
 }
 
 bool monitored_thread::syscall()
 {
   long ret;
-  ret = ptrace(PTRACE_SYSCALL, m_target, nullptr, nullptr);
+  ret = ptrace(PTRACE_SYSCALL, m_target, 0, nullptr);
   return (ret == 0);
 }
 
 bool monitored_thread::single_step()
 {
   long ret;
-  ret = ptrace(PTRACE_SINGLESTEP, m_target, nullptr, nullptr);
+  ret = ptrace(PTRACE_SINGLESTEP, m_target, 0, nullptr);
   return (ret == 0);
 }
 
@@ -173,9 +198,10 @@ pid_t do_waitpid(pid_t pid, int* wstatus)
   return wpid;
 }
 
-bool monitored_thread::wait_status(int* wstatus)
+bool monitored_thread::wait_status(int* wstatus, uint32_t timeout)
 {
   pid_t wpid;
+  uint32_t sleep_total = 0;
   uint32_t sleep_time = 1;
   uint32_t iter = 1;
   do {
@@ -183,10 +209,11 @@ bool monitored_thread::wait_status(int* wstatus)
     if (wpid == 0) {
       usleep(sleep_time);
       sleep_time += iter;
+      sleep_total += sleep_time;
       iter++;
     }
   }
-  while ((wpid == 0) && (iter < 100));
+  while ((wpid == 0) && (sleep_total < timeout));
   return wpid == m_target;
 }
 
@@ -279,90 +306,34 @@ bool monitored_thread::pause(user_regs_struct& regs)
   return true;
 }
 
-bool monitored_thread::pause_after_syscall(user_regs_struct& regs)
-{
-  int wstatus = 0;
-  printf("%d\n",__LINE__);
-  if (!signal_interrupt())
-    return false;
-  printf("%d\n",__LINE__);
-  if (do_waitpid(m_target, &wstatus) != m_target)
-    return false;
-  printf("%d\n",__LINE__);
-  if (!syscall())
-    return false;
-//  printf("%d\n",__LINE__);
-//  if (!cont())
-//    return false;
-  printf("%d\n",__LINE__);
-#if 1
-  if (kill(m_target, SIGSTOP) != 0)
-    return false;
-  printf("%d\n",__LINE__);
-  if (kill(m_target, SIGCONT) != 0)
-    return false;
-  printf("%d\n",__LINE__);
-#endif
-  if (do_waitpid(m_target, &wstatus) != m_target)
-    return false;
-  printf("%d\n",__LINE__);
-
-  long ret;
-  ret = ptrace(PTRACE_GETREGS, m_target, nullptr, &regs);
-  if (ret != 0)
-    return false;
-  printf("%d\n",__LINE__);
-  errno = 0;
-  uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip-2), nullptr);
-  if (errno != 0)
-    return false;
-  printf("%d\n",__LINE__);
-  printf("rip =%llx code= %8.8x\n", regs.rip, code);
-  if ((code & 0xffff) == 0x050f)   //0x0f05 is SYSCALL
-  {
-    printf("OK\n");
-    return true;
-  }
-  return false;
-}
-
 bool monitored_thread::pause_outside_syscall()
 {
-  if(!signal_interrupt()) return false;
-  user_regs_struct regs;
-  int wstatus;
-  if(!wait_status(&wstatus)) return false;
-  if(!read_regs(regs)) return false;
-  errno = 0;
-  uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip - 2), nullptr);
-  if (errno != 0) return false;
-  if ((code & 0xffff) != 0x050f) {
-    //easy success
-    return true;
-  }
-  if(!syscall()) return false;
-  if (kill(m_target, SIGSTOP) != 0)
-    return false;
-  if (kill(m_target, SIGCONT) != 0)
-    return false;
-  if (!wait_status(&wstatus)) return false;
-  for (int i=0; i<100; i++)
+  std::string syscall_proc = "/proc/" + std::to_string(m_target) + "/syscall";
+  char syscall_buffer[1024];
+  int syscall_no;
+  for(int i=0; i<100; i++)
   {
     int wstatus;
-    if (!single_step()) return false;
-    if (!wait_status(&wstatus)) {
-      signal_interrupt();
-      wait_status(&wstatus);
-      cont();
-      return false;
+    ptrace(PTRACE_SINGLESTEP, m_target, 1, 0);
+    if (!wait_status(&wstatus,1000)) {
+      if (kill(m_target, SIGSTOP) != 0)
+        break;
+      if (kill(m_target, SIGCONT) != 0)
+        break;
+      if (!wait_status(&wstatus,30000))
+        break;
     }
-    if (!WIFSTOPPED(wstatus)) return false;
-    if (!read_regs(regs)) return false;
-    errno = 0;
-    uint64_t code = ptrace(PTRACE_PEEKDATA, m_target, (uint64_t*)(regs.rip - 2), nullptr);
-    if (errno != 0) return false;
-    if ((code & 0xffff) != 0x050f) {
-      //easy success
+    int fd = open(syscall_proc.c_str(), O_RDONLY);
+    if (fd>=0) {
+      int r = read(fd, syscall_buffer, 1023);
+      close(fd);
+      if (r <= 0) {
+        break;
+      }
+    }
+    syscall_buffer[1023]=0;
+    syscall_no = strtol(syscall_buffer, nullptr, 0);
+    if (syscall_no == -1) {
       return true;
     }
   }
@@ -382,20 +353,15 @@ bool monitored_thread::inject_syscall(std::function<void(user_regs_struct&)> pre
   if (errno != 0) return false;
   if ((code & 0xffff) != 0x050f) return false;  //0x0f05 is SYSCALL
   syscall_rip = saved_regs.rip - 2;
-  printf("SYSCALL rip = %llx\n", syscall_rip);
   //we seem to be in proper place in code
   //step out of syscall
-  do
-  {
+  do {
     int wstatus;
     if (!single_step()) return false;
     if (!wait_status(&wstatus)) return false;
     if (!WIFSTOPPED(wstatus)) return false;
     if (!read_regs(saved_regs)) return false;
-    printf("STEP eip=%llx\n",saved_regs.rip);
-    //printf("STEP wstatus = %lx %d %d\n",wstatus, WIFSTOPPED(wstatus), (wstatus >> 16) != PTRACE_EVENT_STOP);
-  }
-  while (saved_regs.rip - 2 == syscall_rip);
+  } while (saved_regs.rip - 2 == syscall_rip);
 
   aregs = saved_regs;
   aregs.rip = syscall_rip;
@@ -407,9 +373,7 @@ bool monitored_thread::inject_syscall(std::function<void(user_regs_struct&)> pre
     if (!wait_status(&wstatus)) return false;
     if (!WIFSTOPPED(wstatus)) return false;
     if (!read_regs(aregs)) return false;
-    printf("SYSCALL eip=%llx\n",aregs.rip);
-    sleep(1);
-  } while (/*aregs.rip - 2 == syscall_rip || */aregs.rip == syscall_rip);
+  } while (aregs.rip == syscall_rip);
   result = aregs;
   if (!write_regs(saved_regs)) return false;
   return true;
