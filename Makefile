@@ -58,18 +58,20 @@ agent.so: $(OBJS_AGENT) libunwind liblzma Makefile
 	g++ -shared -Wl,-export-dynamic -Wl,-soname,agent.so \
     -o agent.so $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -pthread
 
-SOBJS = \
-	/usr/lib/x86_64-linux-gnu/Scrt1.o \
-	/usr/lib/x86_64-linux-gnu/crti.o \
-	/usr/lib/x86_64-linux-gnu/crtn.o \
-	/usr/lib/x86_64-linux-gnu/libm.a \
-	/usr/lib/x86_64-linux-gnu/libpthread.a \
-	/usr/lib/x86_64-linux-gnu/libc.a \
-	/usr/local/lib/gcc/$(GCC_MACHINE)/$(GCC_VERSION)/crtbeginS.o \
-	/usr/local/lib/gcc/$(GCC_MACHINE)/$(GCC_VERSION)/libgcc.a \
-	/usr/local/lib/gcc/$(GCC_MACHINE)/$(GCC_VERSION)/libgcc_eh.a \
-	/usr/local/lib/gcc/$(GCC_MACHINE)/$(GCC_VERSION)/crtendS.o \
-	/usr/local/lib64/libstdc++.a
+SOBJS_SRC = \
+	Scrt1.o \
+	crti.o \
+	crtn.o \
+	libm.a \
+	libpthread.a \
+	libc.a \
+	crtbeginS.o \
+	libgcc.a \
+	libgcc_eh.a \
+	crtendS.o \
+	libstdc++.a
+
+SOBJS = $(foreach file,$(SOBJS_SRC),$(shell gcc -print-file-name=$(file)))
 
 plus = $(shell echo $$(( $(1) + $(2) )) )
 
