@@ -13,19 +13,18 @@
 int UnixIO::server(uint64_t some_id)
 {
   int serv_fd, cfd;
-  struct sockaddr_un serv_addr;
+  struct sockaddr_un serv_addr = {0};
 
-  std::string unix_name{"@/wallclock/"};
-  char hex[8*2+1];
-  sprintf(hex, "%16.16lx", some_id);
-  unix_name.append(hex);
+  char unix_name[sizeof(serv_addr.sun_path)];
+  memset(unix_name, 0, sizeof(unix_name));
+  sprintf(unix_name, "@/wallclock/%d", some_id);
 
   serv_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (serv_fd != -1)
   {
     memset(&serv_addr, 0, sizeof(struct sockaddr_un));
     serv_addr.sun_family = AF_UNIX;
-    strncpy(serv_addr.sun_path, unix_name.c_str(), sizeof(serv_addr.sun_path) - 1);
+    strncpy(serv_addr.sun_path, unix_name, sizeof(serv_addr.sun_path) - 1);
     serv_addr.sun_path[0] = '\0';
 
     if (bind(serv_fd, (struct sockaddr *) &serv_addr, sizeof(struct sockaddr_un)) != -1)
@@ -73,18 +72,17 @@ int UnixIO::accept(int serv_fd)
 int UnixIO::connect(uint64_t some_id)
 {
   int conn_fd;
-  struct sockaddr_un conn_addr;
+  struct sockaddr_un conn_addr = {0};
 
-  std::string unix_name{"@/wallclock/"};
-  char hex[8*2+1];
-  sprintf(hex, "%16.16lx", some_id);
-  unix_name.append(hex);
+  char unix_name[sizeof(conn_addr.sun_path)];
+  memset(unix_name, 0, sizeof(unix_name));
+  sprintf(unix_name, "@/wallclock/%d", some_id);
   conn_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn_fd != -1)
   {
     memset(&conn_addr, 0, sizeof(struct sockaddr_un));
     conn_addr.sun_family = AF_UNIX;
-    strncpy(conn_addr.sun_path, unix_name.c_str(), sizeof(conn_addr.sun_path) - 1);
+    strncpy(conn_addr.sun_path, unix_name, sizeof(conn_addr.sun_path) - 1);
     conn_addr.sun_path[0] = '\0';
     if (::connect(conn_fd, (struct sockaddr *) &conn_addr, sizeof(struct sockaddr_un)) == 0)
     {
