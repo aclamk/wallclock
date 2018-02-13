@@ -13,7 +13,7 @@ LIBUNWIND = libunwind/src/.libs/libunwind.a
 liblzma: liblzma/src/liblzma/.libs/liblzma.a
 liblzma/src/liblzma/.libs/liblzma.a:
 	cd liblzma && ./autogen.sh && ./configure
-	make -C liblzma
+	make -C liblzma CFLAGS=-fpic
 	
 LIBLZMA = liblzma/src/liblzma/.libs/liblzma.a
 
@@ -63,7 +63,6 @@ SOBJS_SRC = \
 	crti.o \
 	crtn.o \
 	libm.a \
-	libpthread.a \
 	libc.a \
 	crtbeginS.o \
 	libgcc.a \
@@ -80,7 +79,7 @@ agent.bin: agent_0x00000000
 
 res/agent_bin_% res/map.%: res/agent.%.elf $(OBJS_AGENT) libunwind liblzma Makefile 
 	g++ -fuse-ld=gold -static -s -Wl,--start-group -Wl,--oformat -Wl,binary \
-	-fPIE -fpic -nostdlib $(SOBJS) $(OBJS_AGENT) \
+	-fPIE -fpic -Wl,--build-id=none -nostdlib $(SOBJS) $(OBJS_AGENT) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=res/map.$* -Wl,--end-group \
     -Ttext=$(call plus, $*, 0x1000) -o res/agent_bin_$*
 
@@ -126,7 +125,7 @@ POBJS_AGENT = $(OBJS_BOOTUP) rel.bin.o header.o agent_nh.bin.o
  
 pagent.rel: $(POBJS_AGENT) Makefile script-loader 
 	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
-	-static -s -nostdlib -fPIE -fpic \
+	-static -s -nostdlib -fPIE -fpic -Wl,--build-id=none \
 	-Wl,--start-group $(POBJS_AGENT) -Wl,--end-group -o $@ -T script-loader
 
 rel_check: res/rel_0x00112000 res/rel_0x13579000 res/rel_0x2648a000 res/rel_0x18375000
@@ -134,12 +133,12 @@ rel_check: res/rel_0x00112000 res/rel_0x13579000 res/rel_0x2648a000 res/rel_0x18
 	    	
 bin/agent.elf: $(OBJS_AGENT) libunwind liblzma Makefile 
 	g++ -fuse-ld=gold -Ttext=0x10001000 -Wl,--start-group -static \
-	-fPIE -fpic -nostdlib $(SOBJS) \
+	-fPIE -fpic -Wl,--build-id=none -nostdlib $(SOBJS) \
     -o bin/agent.elf $(OBJS_AGENT) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
 
 res/agent.%.elf: $(OBJS_AGENT) libunwind liblzma Makefile
-	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -fPIE -fpic -nostdlib -static \
+	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -fPIE -fpic -Wl,--build-id=none -nostdlib -static \
 	-Wl,--start-group $(SOBJS) $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
     -Wl,-Map=res/agent.$*.map -o res/agent.$*.elf 
 
