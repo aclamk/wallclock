@@ -1,4 +1,4 @@
-all: dirs wallclock agent.so pagent.rel
+all: dirs wallclock libagent.so pagent.rel
 tests: testprog test_agent_0x10000000 test_agent_anyplace test_agent_relocated
 
 .phony: libunwind liblzma
@@ -54,9 +54,9 @@ clean:
 testprog: bin/testprog
 wallclock: bin/wallclock
 
-agent.so: $(OBJS_AGENT) libunwind liblzma Makefile
-	g++ -shared -Wl,-export-dynamic -Wl,-soname,agent.so \
-    -o agent.so $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -pthread
+libagent.so: $(OBJS_AGENT) libunwind liblzma Makefile
+	g++ -shared -Wl,-export-dynamic -Wl,-soname,libagent.so \
+    -o libagent.so $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -pthread
 
 SOBJS_SRC = \
 	Scrt1.o \
@@ -176,8 +176,8 @@ bin/test_agent_anyplace: src/test_agent_anyplace.cpp pagent.rel
 	g++ -static $< -o $@
 	
 	
-bin/wallclock: $(OBJS_WALLCLOCK) agent.so bin
-	g++ -o $@ $(OBJS_WALLCLOCK) agent.so -lpthread -lunwind 
+bin/wallclock: $(OBJS_WALLCLOCK) libagent.so bin
+	g++ -o $@ $(OBJS_WALLCLOCK) -lpthread -lunwind -ldl
 
 bin/testprog: src/testprog.cpp obj/largecode.o bin
 	g++ src/testprog.cpp obj/largecode.o -o $@ -lpthread

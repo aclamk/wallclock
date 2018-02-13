@@ -444,8 +444,7 @@ bool monitored_thread::execute_remote(interruption_func* func,
                                   uint64_t arg1)
 {
   user_regs_struct regs;
-  if (!pause(regs))
-    return false;
+  read_regs(regs);
   if (0 != inject_func(regs, func, arg1, 0, 0))
     return false;
   if (!wait_return(nullptr, nullptr, nullptr))

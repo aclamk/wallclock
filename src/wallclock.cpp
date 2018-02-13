@@ -112,6 +112,7 @@ int main(int argc, char** argv)
   std::ofstream outfile;
   std::ostream* output = &std::cout;
   double suppress = 0;
+  bool load_so = false;
   int i = 1;
   argc--; argv++;
 
@@ -204,6 +205,13 @@ int main(int argc, char** argv)
       }
     }
 
+    if(strcmp(*argv, "-so") == 0)
+    {
+      argc--; argv++;
+      load_so = true;
+      continue;
+    }
+
     //non-prefixed parameter = pid
     char* endptr;
     pid_t tid;
@@ -234,7 +242,7 @@ int main(int argc, char** argv)
   stop_sampling_sig.sa_sigaction = stop_sampling;
   sigaction(SIGINT, &stop_sampling_sig, nullptr);
 
-  init_agent_interface(mgr, tids[0], false);
+  init_agent_interface(mgr, tids[0], load_so);
 
   mgr.read_symbols();
   probe(mgr);

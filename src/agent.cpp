@@ -43,6 +43,8 @@
 #include <sys/user.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 #include <elfio/elfio.hpp>
 
 extern "C"
@@ -88,18 +90,17 @@ char vstack[stack_size];
 
 static int agent_thread(void* ctx)
 {
-  the_agent = Agent::create();//new agent;
+  the_agent = Agent::create();
   Agent::worker(the_agent, *(pid_t*)ctx);
   return true;
 }
 
 void _init_agent()
 {
-  the_agent = Agent::create();//new agent;
   pid_t v = getpid();
   if (clone(agent_thread, vstack + stack_size,
                  CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM,
-            the_agent, &v) == -1) {
+            &v) == -1) {
     _remote_return(0);
     return;
   }
@@ -644,6 +645,7 @@ bool Agent::worker(pid_t pid)
 int Agent::worker(void* arg, pid_t pid)
 {
   Agent* an_agent = (Agent*)arg;
+  int res = setpriority(PRIO_PROCESS, 0, -20);
   an_agent->worker(pid);
   delete an_agent;
   syscall(SYS_exit, 0);

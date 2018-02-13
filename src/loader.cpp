@@ -26,6 +26,7 @@
 #include <vector>
 #include <dirent.h>
 #include <thread>
+#include <dlfcn.h>
 
 extern RemoteAPI agent_interface;
 RemoteAPI agent_interface_remote;
@@ -121,34 +122,37 @@ std::vector<pid_t> list_threads_in_group(pid_t pid)
   return threads;
 }
 
-
-extern RemoteAPI agent_interface;
-
 bool init_agent_so(pid_t remote, pid_t remote_leader)
 {
-  void* my_agent_so = locate_library(syscall(SYS_gettid), "agent.so");
-  void* remote_agent_so = locate_library(remote, "agent.so");
+  void* handle = dlopen("libagent.so",RTLD_NOW);
+  if (!handle) {
+    std::cout << "unable to load libagent.so" << std::endl;
+    return false;
+  }
+  void* sym = dlsym(handle, "agent_interface");
+  if (!sym)
+    return false;
+  RemoteAPI* agent_interface = (RemoteAPI*)sym;
+  void* my_agent_so = locate_library(syscall(SYS_gettid), "libagent.so");
+  void* remote_agent_so = locate_library(remote, "libagent.so");
   assert(my_agent_so != nullptr);
   if (remote_agent_so == nullptr) {
     std::cout << "remote does not have agent.so library" << std::endl;
-    //exit(-1);
     return false;
   }
-  if (memcmp(agent_interface.sanity_marker,"AGENTAPI",8) != 0) {
+  if (memcmp(agent_interface->sanity_marker,"AGENTAPI",8) != 0) {
     return false;
   }
 
   int64_t diff = (uint64_t)remote_agent_so - (uint64_t)my_agent_so;
-
-  agent_interface_remote = agent_interface;
+  agent_interface_remote = *agent_interface;
   agent_interface_remote._init_agent += diff;
   agent_interface_remote._wc_inject += diff;
   std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
   monitored_thread pt;
   size_t i;
-  for(i = 0; i < threads_in_group.size(); i++)
-  {
-    if (pt.seize(threads_in_group[i])) {
+  for(i = 0; i < threads_in_group.size(); i++) {
+    if (pt.attach(threads_in_group[i])) {
       if (pt.pause_outside_syscall()) {
         break;
       } else {
@@ -156,21 +160,19 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
       }
     }
   }
-  if (i == threads_in_group.size())
-  {
+  if (i == threads_in_group.size()) {
     std::cerr << "Target " << remote << " cannot be sized" << std::endl;
     return false;
   }
-  if (!pt.execute_remote((interruption_func*)agent_interface_remote._init_agent, (uint64_t)remote_leader))
-  {
+  if (!pt.execute_remote((interruption_func*)agent_interface_remote._init_agent,
+                         (uint64_t)remote_leader)) {
     std::cerr << "failed to execute remote agent" << std::endl;
     return false;
   }
-  if (!pt.detach())
-    return false;
-
   return true;
 }
+
+
 
 bool load_binary_agent(pid_t remote, pid_t remote_leader)
 {
@@ -243,9 +245,6 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader)
   pt.wait_return();
   pt.detach();
 
-  agent_interface_remote = agent_interface;
-  agent_interface_remote._init_agent = 0x10000000;
-
   return true;
 }
 
@@ -262,7 +261,11 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so)
   if (server_fd != -1) {
     close(server_fd);
     if (use_agent_so) {
-      bool b = init_agent_so(remote, remote_leader);
+      bool b;
+      std::thread loader([&](){
+      b = init_agent_so(remote, remote_leader);
+      });
+      loader.join();
       if (!b) {
         std::cerr << "Unable to use remote agent.so" << std::endl;
         return false;
