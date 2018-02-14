@@ -105,7 +105,20 @@ void stop_sampling(int signum, siginfo_t *info, void *ctx)
   stop_probing.store(true);
 }
 
-
+void print_help() {
+  static const char help[] =
+"Usage: wallclock [OPTION]... [TID]...\n"
+"Query remote program for split of execution time.\n"
+"Factors in periods of waiting for cpu, both synchronization and deschedule.\n"
+"\n"
+" -o FILE                 write output to FILE\n"
+" -t TIME(s)              TIME of sampling, in seconds. Default 10\n"
+" -d TIME(ms)             TIME interval between samples, in miliseconds. Default 10\n"
+" -s LIMIT                Suppress branches consuming below LIMIT. Default 0\n"
+" -so                     Attempt to use libagent.so. Default is to injected code.\n"
+" -h, --help              Help";
+  std::cout << help << std::endl;
+}
 
 int main(int argc, char** argv)
 {
@@ -114,115 +127,74 @@ int main(int argc, char** argv)
   double suppress = 0;
   bool load_so = false;
   int i = 1;
+  //std::string::size_type sz;
+  char* endp;
   argc--; argv++;
-
+  char oneparam_args[]="-t\0-d\0-o\0-s";
   while (argc >= 1)
   {
-    if(strcmp(*argv, "-t") == 0)
-    {
-      if (argc >= 2)
-      {
-        argc--; argv++;
-        char* endptr;
-        sampling_time = strtol(*argv, &endptr, 10);
-        if (*endptr!= '\0')
-        {
-          std::cerr << "Option -t cannot accept `" << *argv << "'" << std::endl;
-          exit(-1);
-        }
-        argc--; argv++;
-        continue;
-      }
-      else
-      {
-        std::cerr << "Option -t requires parameter" << std::endl;
-        exit(-1);
-      }
-    }
-    if(strcmp(*argv, "-d") == 0)
-    {
-      if (argc >= 2)
-      {
-        argc--; argv++;
-        char* endptr;
-        delay = strtol(*argv, &endptr, 10);
-        if (*endptr!= '\0')
-        {
-          std::cerr << "Option -d cannot accept `" << *argv << "'" << std::endl;
-          exit(-1);
-        }
-        argc--; argv++;
-        continue;
-      }
-      else
-      {
-        std::cerr << "Option -d requires parameter" << std::endl;
-        exit(-1);
-      }
-    }
+    std::string arg = *argv;
+    argc--; argv++;
 
-    if(strcmp(*argv, "-o") == 0)
-    {
-      if (argc >= 2)
-      {
-        argc--; argv++;
-        outfile = std::ofstream(*argv,std::ofstream::binary|std::ofstream::trunc);
+    if(std::string(oneparam_args, sizeof(oneparam_args)).find(arg) != std::string::npos) {
+      //one param argument
+      if (argc < 1) {
+        std::cerr << "Option " << arg << " requires parameter" << std::endl;
+        exit(-1);
+      }
+      std::string value = *argv;
+      if (arg == "-t") {
+        sampling_time = strtol(*argv, &endp, 0);
+        if (*endp != '\0') {
+          std::cerr << "Option -t cannot accept `" << value << "'" << std::endl;
+          exit(-1);
+        }
+      }
+      if (arg == "-d") {
+        delay = strtol(*argv, &endp, 0);
+        if (*endp != '\0') {
+          std::cerr << "Option -d cannot accept `" << value << "'" << std::endl;
+          exit(-1);
+        }
+      }
+      if (arg == "-o") {
+        outfile = std::ofstream(value.c_str(),std::ofstream::binary|std::ofstream::trunc);
         if (!outfile.good()) {
-          std::cerr << "Cannot open '" << *argv << "'" << std::endl;
+          std::cerr << "Cannot open '" << value << "'" << std::endl;
           exit(-1);
         } else {
           output = &outfile;
         }
-        argc--; argv++;
-        continue;
       }
-      else
-      {
-        std::cerr << "Option -o requires parameter" << std::endl;
-        exit(-1);
-      }
-    }
-
-    if(strcmp(*argv, "-s") == 0)
-    {
-      if (argc >= 2)
-      {
-        argc--; argv++;
-        char* endp;
-        suppress = strtod(*argv, &endp);
+      if (arg == "-s") {
+        suppress = strtod(*argv, &endp) / 100;
         if (*endp != '\0') {
-          std::cerr << "Invalid float '" << *argv << "'" << std::endl;
+          std::cerr << "Invalid float '" << value << "'" << std::endl;
           exit(-1);
         }
-        suppress = suppress / 100;
-        argc--; argv++;
-        continue;
       }
-      else
-      {
-        std::cerr << "Option -s requires parameter" << std::endl;
-        exit(-1);
-      }
+      argc--; argv++;
+      continue;
     }
 
-    if(strcmp(*argv, "-so") == 0)
-    {
-      argc--; argv++;
+    if (arg == "-so") {
       load_so = true;
       continue;
     }
 
+    if (arg == "-h" || arg == "--help") {
+      print_help();
+      exit(-1);
+    }
     //non-prefixed parameter = pid
-    char* endptr;
     pid_t tid;
-    tid = strtol(*argv, &endptr, 10);
-    if (*endptr != '\0')
+    tid = strtol(arg.c_str(), &endp, 0);
+    if (*endp != '\0')
     {
-      std::cerr << "Cannot accept `" << *argv << "' as thread-id" << std::endl;
+      std::cerr << "Cannot accept `" << arg << "' as thread-id" << std::endl;
       exit(-1);
     }
     tids.push_back(tid);
-    argc--; argv++;
   }
 
   if (tids.size() == 0)
@@ -232,8 +204,6 @@ int main(int argc, char** argv)
   }
 
   Manager mgr;
-  //init_agent_interface(mgr, tids[0], false);
-
   struct sigaction stop_sampling_sig;
 
   sigemptyset(&stop_sampling_sig.sa_mask);
