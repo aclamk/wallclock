@@ -70,6 +70,7 @@ public:
 
   bool pause(user_regs_struct& regs);
   bool pause_outside_syscall();
+  bool in_syscall();
   bool execute_remote(interruption_func* func,
                       uint64_t arg1);
   bool wait_status(int* wstatus, uint32_t timeout = 100000);

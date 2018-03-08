@@ -173,6 +173,50 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
 }
 
 
+monitored_thread pause_outside_syscall(pid_t remote_leader)
+{
+  std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
+
+  std::vector<monitored_thread> mt;
+  for (size_t i = 0; i < threads_in_group.size(); i++) {
+    monitored_thread pt;
+    if (pt.seize(threads_in_group[i])) {
+      mt.push_back(pt);
+    }
+  }
+
+  for (auto i = mt.begin(); i != mt.end(); ) {
+    if ((*i).signal_interrupt()) {
+      int wstatus;
+      if ((*i).wait_status(&wstatus, 1000)) {
+        if ((*i).single_step()) {
+          i++;
+          continue;
+        }
+      }
+    }
+    (*i).detach();
+    i = mt.erase(i);
+  }
+  monitored_thread pt;
+  for (auto i = mt.begin(); i != mt.end(); ) {
+    int wstatus;
+    if ((*i).wait_status(&wstatus, 1000)) {
+      if ((*i).in_syscall()) {
+        pt = *i;
+        i = mt.erase(i);
+        break;
+      }
+    }
+  }
+  for (auto i = mt.begin(); i != mt.end(); ) {
+    (*i).detach();
+    i = mt.erase(i);
+  }
+
+  return pt;
+}
+
 
 bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
 {
@@ -191,18 +235,9 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
   if (i == threads_in_group.size())
     return false; //was not able to locate place of rip
 
-  monitored_thread pt;
-  for(i = 0; i < threads_in_group.size(); i++)
-  {
-    if (pt.attach(threads_in_group[i])) {
-      if (pt.pause_outside_syscall()) {
-        break;
-      } else {
-        pt.detach();
-      }
-    }
-  }
-  if (i == threads_in_group.size())
+
+  monitored_thread pt = pause_outside_syscall(remote_leader);
+  if (pt.m_target == 0)
     return false; //was not able to connect to any of threads
 
   int res;
@@ -287,7 +322,7 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pa
 
   int count = 0;
   conn_fd = -1;
-  while (count < 30 && conn_fd ==-1)
+  while (count < 30000 && conn_fd ==-1)
   {
     conn_fd = mgr.io.connect(remote_leader);
     count++;

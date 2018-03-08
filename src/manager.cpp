@@ -306,6 +306,24 @@ bool monitored_thread::pause(user_regs_struct& regs)
   return true;
 }
 
+/*in case of error, default to true*/
+bool monitored_thread::in_syscall()
+{
+  std::string syscall_proc = "/proc/" + std::to_string(m_target) + "/syscall";
+  char syscall_buffer[1024];
+  int syscall_no;
+  int fd = open(syscall_proc.c_str(), O_RDONLY);
+  if (fd < 0)
+    return true;
+  int r = read(fd, syscall_buffer, 1023);
+  close(fd);
+  if (r <= 0)
+    return true;
+  syscall_buffer[1023]=0;
+  syscall_no = strtol(syscall_buffer, nullptr, 0);
+  return (syscall_no != -1);
+}
+
 bool monitored_thread::pause_outside_syscall()
 {
   std::string syscall_proc = "/proc/" + std::to_string(m_target) + "/syscall";
@@ -316,12 +334,14 @@ bool monitored_thread::pause_outside_syscall()
     int wstatus;
     ptrace(PTRACE_SINGLESTEP, m_target, 1, 0);
     if (!wait_status(&wstatus,1000)) {
+      /*
       if (kill(m_target, SIGSTOP) != 0)
         break;
       if (kill(m_target, SIGCONT) != 0)
         break;
       if (!wait_status(&wstatus,30000))
         break;
+        */
     }
     int fd = open(syscall_proc.c_str(), O_RDONLY);
     if (fd>=0) {
@@ -337,7 +357,7 @@ bool monitored_thread::pause_outside_syscall()
       return true;
     }
   }
-  cont();
+  //cont();
   return false;
 }
 
