@@ -202,13 +202,13 @@ bool monitored_thread::wait_status(int* wstatus, uint32_t timeout)
 {
   pid_t wpid;
   uint32_t sleep_total = 0;
-  uint32_t sleep_time = 1;
+  uint32_t sleep_time = 1000;
   uint32_t iter = 1;
   do {
     wpid = waitpid(m_target, wstatus, WNOHANG);
     if (wpid == 0) {
       usleep(sleep_time);
-      sleep_time += iter;
+      sleep_time += iter*1000;
       sleep_total += sleep_time;
       iter++;
     }
