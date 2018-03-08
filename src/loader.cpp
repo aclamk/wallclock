@@ -174,7 +174,7 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
 
 
 
-bool load_binary_agent(pid_t remote, pid_t remote_leader)
+bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
 {
   uint64_t syscall_rip;
   std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
@@ -241,7 +241,7 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader)
   remote_iov.iov_len = buf.st_size;
 
   res = process_vm_writev(remote, &local_iov, 1, &remote_iov, 1, 0);
-  pt.execute_init((uint64_t)remote_image, remote_leader);
+  pt.execute_init((uint64_t)remote_image, pause_for_ptrace?remote_leader|0x100000000:remote_leader);
   pt.wait_return();
   pt.detach();
 
@@ -250,7 +250,7 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader)
 
 
 
-bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so)
+bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pause_for_ptrace)
 {
   pid_t remote_leader = find_leader_thread(remote);
 
@@ -273,7 +273,7 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so)
     } else {
       bool b;
       std::thread loader([&](){
-        b = load_binary_agent(remote, remote_leader);
+        b = load_binary_agent(remote, remote_leader, pause_for_ptrace);
       });
       loader.join();
       if (!b) {

@@ -4,7 +4,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -114,21 +113,68 @@ void atexit_x() {
 
 }
 
+int atoi(const char* p) {
+  int v = 0;
+  while (*p>='0' && *p<='9') {
+    v = v*10 + (*p - '0');
+    p++;
+  }
+  return v;
+}
+
+char* strstr(char *haystack, char *needle) {
+  char* h = haystack;
+  char* n = needle;
+  while (1) {
+    if (*n == 0) return haystack;
+    if (*h == 0) return 0;
+    if (*n == *h) {
+      n++; h++; continue;
+    }
+    haystack++;
+    h = haystack;
+    n = needle;
+  }
+}
+
+
+void wait_tracer() {
+  while (1) {
+    char buffer[4096];
+    int fd = raw_syscall(SYS_open, "/proc/self/status", O_RDONLY);
+    if (fd == -1)
+      return;
+    int r = raw_syscall(SYS_read, fd, buffer, 4095);
+    if (r > 0)
+      buffer[r] = 0;
+    raw_syscall(SYS_close, fd);
+    char* p = strstr(buffer, "TracerPid:\t");
+    if (p != 0) {
+      p = p + sizeof("TracerPid:\t");
+      int pid = atoi(p);
+      if (pid != 0) break;
+    }
+    struct timespec rqtp; //= { 40, 0 };
+    rqtp.tv_sec = 1;
+    rqtp.tv_nsec = 0;
+    raw_syscall(SYS_nanosleep, &rqtp, 0);
+  }
+  return;
+}
+
 void agent_thread(uint64_t connection_id)
 {
-  struct timespec rqtp; //= { 40, 0 };
-  rqtp.tv_sec = 30;
-  //raw_syscall(SYS_nanosleep, &rqtp, 0);
-
   int auxv_size = load_auxv(_stack_top);
   if (auxv_size >= 0 && auxv_size < 4096) {
     fix_auxv((uint64_t*)_stack_top, auxv_size/(sizeof(uint64_t) * 2));
   }
   apply_relocations((char*)_binary_header_start, (uint32_t)(uint64_t)_binary_header_start);
-
+  if(connection_id & 0x100000000LL) {
+    wait_tracer();
+  }
+  connection_id = connection_id & 0xffffffff;
   call_start((void (*)())_binary_header_start[0], (void (*)())atexit_x,
              _stack_top, auxv_size, connection_id);
-  //call_agent(_stack_top, auxv_size);
 }
 
 

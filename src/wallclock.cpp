@@ -116,6 +116,7 @@ void print_help() {
 " -d TIME(ms)             TIME interval between samples, in miliseconds. Default 10\n"
 " -s LIMIT                Suppress branches consuming below LIMIT. Default 0\n"
 " -so                     Attempt to use libagent.so. Default is to injected code.\n"
+" -pause                  Pause agent until ptrace/gdb connected (debug).\n"
 " -h, --help              Help";
   std::cout << help << std::endl;
 }
@@ -126,6 +127,7 @@ int main(int argc, char** argv)
   std::ostream* output = &std::cout;
   double suppress = 0;
   bool load_so = false;
+  bool wait_for_ptrace = false;
   int i = 1;
   //std::string::size_type sz;
   char* endp;
@@ -181,6 +183,10 @@ int main(int argc, char** argv)
       load_so = true;
       continue;
     }
+    if (arg == "-pause") {
+      wait_for_ptrace = true;
+      continue;
+    }
 
     if (arg == "-h" || arg == "--help") {
       print_help();
@@ -206,13 +212,14 @@ int main(int argc, char** argv)
   Manager mgr;
   struct sigaction stop_sampling_sig;
 
+  init_agent_interface(mgr, tids[0], load_so, wait_for_ptrace);
+
   sigemptyset(&stop_sampling_sig.sa_mask);
   sigaddset(&stop_sampling_sig.sa_mask, SIGINT);
   stop_sampling_sig.sa_flags = SA_SIGINFO | SA_RESTART;
   stop_sampling_sig.sa_sigaction = stop_sampling;
   sigaction(SIGINT, &stop_sampling_sig, nullptr);
 
-  init_agent_interface(mgr, tids[0], load_so);
 
   mgr.read_symbols();
   probe(mgr);

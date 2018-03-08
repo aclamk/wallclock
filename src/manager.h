@@ -23,21 +23,23 @@ typedef uint64_t remote_sampling_ctx;
 class monitored_thread
 {
 public:
+  /*
   monitored_thread() {}
   monitored_thread(monitored_thread&& mt):
     m_target(mt.m_target),
     m_retry(mt.m_retry),
-    m_remote_context(mt.m_remote_context),
-    m_backtrace_inject_requests(mt.m_backtrace_inject_requests.load()) {}
+    m_remote_context(mt.m_remote_context) {}
+//  monitored_thread(monitored_thread& mt):
+//    m_target(mt.m_target) {}
   ~monitored_thread() {}
-
+*/
   user_regs_struct regs;
 
 public:
   pid_t m_target{0};
   bool m_retry{false};
   remote_sampling_ctx m_remote_context{0};
-  std::atomic<uint32_t> m_backtrace_inject_requests{0};
+  //std::atomic<uint32_t> m_backtrace_inject_requests{0};
 
   int inject_backtrace(user_regs_struct& regs);
   int inject_backtrace(user_regs_struct& regs,

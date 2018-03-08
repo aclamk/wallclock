@@ -20,6 +20,6 @@ struct RemoteAPI
 };
 
 extern RemoteAPI agent_interface_remote;
-bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so);
+bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pause_for_ptrace);
 
 #endif /* LOADER_H_ */
