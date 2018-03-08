@@ -122,6 +122,58 @@ std::vector<pid_t> list_threads_in_group(pid_t pid)
   return threads;
 }
 
+monitored_thread pause_outside_syscall(pid_t remote_leader)
+{
+  std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
+  std::vector<monitored_thread> mt;
+  for (size_t i = 0; i < threads_in_group.size(); i++) {
+    monitored_thread pt;
+    if (pt.attach(threads_in_group[i])) {
+      mt.push_back(pt);
+    }
+  }
+
+  monitored_thread pt;
+  //single-step all
+  for (auto i = mt.begin(); i != mt.end(); i++) {
+    if ((*i).single_step()) {
+      int wstatus;
+      if ((*i).wait_status(&wstatus)) {
+        if (!(*i).in_syscall()) {
+          pt = *i;
+          i = mt.erase(i);
+          break;
+        }
+      }
+    }
+  }
+  while (pt.m_target == 0 && mt.size() > 0) {
+    for (auto i = mt.begin(); i != mt.end();) {
+      int wstatus;
+      if ((*i).wait_status(&wstatus)) {
+        if (!(*i).in_syscall()) {
+          pt = *i;
+          i = mt.erase(i);
+          break;
+        }
+        else
+        {
+          if (!(*i).single_step()) {
+            i = mt.erase(i);
+            continue;
+          }
+        }
+      }
+      i++;
+    }
+  }
+  for (auto i = mt.begin(); i != mt.end(); ) {
+    (*i).detach();
+    i = mt.erase(i);
+  }
+  return pt;
+}
+
 bool init_agent_so(pid_t remote, pid_t remote_leader)
 {
   void* handle = dlopen("libagent.so",RTLD_NOW);
@@ -148,19 +200,9 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
   agent_interface_remote = *agent_interface;
   agent_interface_remote._init_agent += diff;
   agent_interface_remote._wc_inject += diff;
-  std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
-  monitored_thread pt;
-  size_t i;
-  for(i = 0; i < threads_in_group.size(); i++) {
-    if (pt.attach(threads_in_group[i])) {
-      if (pt.pause_outside_syscall()) {
-        break;
-      } else {
-        pt.detach();
-      }
-    }
-  }
-  if (i == threads_in_group.size()) {
+
+  monitored_thread pt = pause_outside_syscall(remote_leader);
+  if (pt.m_target == 0) {
     std::cerr << "Target " << remote << " cannot be sized" << std::endl;
     return false;
   }
@@ -173,49 +215,7 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
 }
 
 
-monitored_thread pause_outside_syscall(pid_t remote_leader)
-{
-  std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
 
-  std::vector<monitored_thread> mt;
-  for (size_t i = 0; i < threads_in_group.size(); i++) {
-    monitored_thread pt;
-    if (pt.seize(threads_in_group[i])) {
-      mt.push_back(pt);
-    }
-  }
-
-  for (auto i = mt.begin(); i != mt.end(); ) {
-    if ((*i).signal_interrupt()) {
-      int wstatus;
-      if ((*i).wait_status(&wstatus, 1000)) {
-        if ((*i).single_step()) {
-          i++;
-          continue;
-        }
-      }
-    }
-    (*i).detach();
-    i = mt.erase(i);
-  }
-  monitored_thread pt;
-  for (auto i = mt.begin(); i != mt.end(); ) {
-    int wstatus;
-    if ((*i).wait_status(&wstatus, 1000)) {
-      if ((*i).in_syscall()) {
-        pt = *i;
-        i = mt.erase(i);
-        break;
-      }
-    }
-  }
-  for (auto i = mt.begin(); i != mt.end(); ) {
-    (*i).detach();
-    i = mt.erase(i);
-  }
-
-  return pt;
-}
 
 
 bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)

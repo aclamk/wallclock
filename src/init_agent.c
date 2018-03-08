@@ -49,7 +49,7 @@ void init_agent(uint64_t arg0)
   stack_bottom[-1] = arg0;
   //CLONE_PARENT makes that parent of profiled process gets sigchild. I hope it will not confuse any daemons.
   raw_syscall(SYS_clone, CLONE_PARENT_SETTID | CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM | CLONE_PARENT,
-                  stack_bottom - 2, 0, 0);
+              stack_bottom - 2, 0, 0);
   //signal agent that init process is done
   raw_syscall(-1, arg0 );
 }

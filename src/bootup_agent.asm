@@ -11,9 +11,9 @@ entry_point:
 	//if called (testing) by directly invoking this, rdi != 0
 	//  and stack contains:
 	//rsp:    = return address
+	pushf
 	push %rbp
 	push %rax
-	pushf
 	push %rbx
 	push %rcx
 	push %rdx
@@ -51,13 +51,14 @@ entry_point:
 	pop %rdx
 	pop %rcx
 	pop %rbx
-	popf
 	pop %rax
 	pop %rbp
 	cmp $0,%rdi
 	jne 1f
+	popf
 	ret
 1:
+	popf
 	mov 8(%rsp), %rdi
 	ret $128+8
 
