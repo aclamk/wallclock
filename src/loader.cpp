@@ -126,50 +126,16 @@ monitored_thread pause_outside_syscall(pid_t remote_leader)
 {
   std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
   std::vector<monitored_thread> mt;
-  for (size_t i = 0; i < threads_in_group.size(); i++) {
-    monitored_thread pt;
-    if (pt.attach(threads_in_group[i])) {
-      mt.push_back(pt);
-    }
-  }
-
   monitored_thread pt;
-  //single-step all
-  for (auto i = mt.begin(); i != mt.end(); i++) {
-    if ((*i).single_step()) {
-      int wstatus;
-      if ((*i).wait_status(&wstatus)) {
-        if (!(*i).in_syscall()) {
-          pt = *i;
-          i = mt.erase(i);
+  while (pt.m_target == 0) {
+    for (size_t i = 0; i < threads_in_group.size(); i++) {
+      if (pt.attach(threads_in_group[i])) {
+        if (pt.pause_outside_syscall()) {
           break;
         }
+        pt.detach();
       }
     }
-  }
-  while (pt.m_target == 0 && mt.size() > 0) {
-    for (auto i = mt.begin(); i != mt.end();) {
-      int wstatus;
-      if ((*i).wait_status(&wstatus)) {
-        if (!(*i).in_syscall()) {
-          pt = *i;
-          i = mt.erase(i);
-          break;
-        }
-        else
-        {
-          if (!(*i).single_step()) {
-            i = mt.erase(i);
-            continue;
-          }
-        }
-      }
-      i++;
-    }
-  }
-  for (auto i = mt.begin(); i != mt.end(); ) {
-    (*i).detach();
-    i = mt.erase(i);
   }
   return pt;
 }

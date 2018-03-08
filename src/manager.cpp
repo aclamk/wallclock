@@ -124,8 +124,9 @@ bool monitored_thread::detach()
   {
     int wstatus;
     if (!wait_status(&wstatus)) ret = -1;
-    ret = ptrace(PTRACE_DETACH, m_target, nullptr, nullptr);
+
   }
+  ret = ptrace(PTRACE_DETACH, m_target, nullptr, nullptr);
   m_target = 0;
   return (ret == 0);
 }
@@ -326,38 +327,22 @@ bool monitored_thread::in_syscall()
 
 bool monitored_thread::pause_outside_syscall()
 {
-  std::string syscall_proc = "/proc/" + std::to_string(m_target) + "/syscall";
-  char syscall_buffer[1024];
-  int syscall_no;
-  for(int i=0; i<100; i++)
-  {
-    int wstatus;
-    ptrace(PTRACE_SINGLESTEP, m_target, 1, 0);
-    if (!wait_status(&wstatus,1000)) {
-      /*
-      if (kill(m_target, SIGSTOP) != 0)
-        break;
-      if (kill(m_target, SIGCONT) != 0)
-        break;
-      if (!wait_status(&wstatus,30000))
-        break;
-        */
-    }
-    int fd = open(syscall_proc.c_str(), O_RDONLY);
-    if (fd>=0) {
-      int r = read(fd, syscall_buffer, 1023);
-      close(fd);
-      if (r <= 0) {
-        break;
-      }
-    }
-    syscall_buffer[1023]=0;
-    syscall_no = strtol(syscall_buffer, nullptr, 0);
-    if (syscall_no == -1) {
-      return true;
-    }
+  if (!in_syscall()) {
+    return true;
   }
-  //cont();
+  if (single_step()) {
+    int wstatus;
+    if (wait_status(&wstatus)) {
+      if (!in_syscall()) {
+        return true;
+      }
+    } else {
+      kill(m_target, SIGSTOP);
+      kill(m_target, SIGCONT);
+      wait_status(&wstatus);
+    }
+    return false;
+  }
   return false;
 }
 
