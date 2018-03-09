@@ -27,6 +27,8 @@ OBJS_AGENT_CPP = obj/agent/agent.o \
                  obj/agent/unix_io.o
 OBJS_AGENT = $(OBJS_AGENT_ASM) $(OBJS_AGENT_CPP)
 
+OBJS_AGENT_EXTRA = obj/agent/brk.o
+
 OBJS_BOOTUP_ASM = obj/bootup/bootup_agent.o \
                   obj/bootup/syscall.o \
                   obj/bootup/call_start.o 
@@ -77,11 +79,11 @@ plus = $(shell echo $$(( $(1) + $(2) )) )
 agent.bin: agent_0x00000000
 	cp $^ $@
 
-res/agent_bin_% res/map.%: res/agent.%.elf $(OBJS_AGENT) libunwind liblzma Makefile 
+res/agent_bin_% res/map.%: res/agent.%.elf $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) libunwind liblzma Makefile
 	g++ -fuse-ld=gold -static -s -Wl,--start-group -Wl,--oformat -Wl,binary \
-	-fPIE -fpic -Wl,--build-id=none -nostdlib $(SOBJS) $(OBJS_AGENT) \
+	-fPIE -fpic -Wl,--build-id=none -nostdlib $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=res/map.$* -Wl,--end-group \
-    -Ttext=$(call plus, $*, 0x1000) -o res/agent_bin_$*
+    -Wl,--allow-multiple-definition -Ttext=$(call plus, $*, 0x1000) -o res/agent_bin_$*
 
 .PRECIOUS: agent_% 
 
@@ -137,10 +139,10 @@ bin/agent.elf: $(OBJS_AGENT) libunwind liblzma Makefile
     -o bin/agent.elf $(OBJS_AGENT) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
 
-res/agent.%.elf: $(OBJS_AGENT) libunwind liblzma Makefile
+res/agent.%.elf: $(OBJS_AGENT) $(OBJS_AGENT_EXTRA) libunwind liblzma Makefile
 	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -fPIE -fpic -Wl,--build-id=none -nostdlib -static \
-	-Wl,--start-group $(SOBJS) $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
-    -Wl,-Map=res/agent.$*.map -o res/agent.$*.elf 
+	-Wl,--start-group $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
+    -Wl,--allow-multiple-definition -Wl,-Map=res/agent.$*.map -o res/agent.$*.elf
 
 DEBUG = -O0 -g
 
@@ -148,6 +150,8 @@ $(OBJS_AGENT_CPP): obj/agent/%.o: src/%.cpp
 	g++ -c $< -o $@ -fPIC -Ielfio $(DEBUG)
 $(OBJS_AGENT_ASM): obj/agent/%.o: src/%.asm
 	as -c $< -o $@
+$(OBJS_AGENT_EXTRA): obj/agent/%.o: src/%.cpp
+	g++ -c $< -o $@ -fPIC $(DEBUG)
 
 $(OBJS_BOOTUP_C): obj/bootup/%.o: src/%.c
 	gcc -c $< -o $@ -fPIC $(DEBUG)
