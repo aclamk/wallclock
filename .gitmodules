@@ -6,4 +6,4 @@
 	url = https://github.com/pathscale/libunwind.git
 [submodule "elfio"]
 	path = elfio
-	url = https://git.code.sf.net/p/elfio/code
+	url = https://github.com/aclamk/elfio.git
