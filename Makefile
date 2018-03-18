@@ -85,7 +85,7 @@ res/agent_bin_% res/agent_bin_%.map: res/agent.%.elf $(OBJS_AGENT_EXTRA) $(OBJS_
 	g++ -fuse-ld=gold -static -s -Wl,--start-group -Wl,--oformat -Wl,binary \
 	-fPIE -fpic -Wl,--build-id=none -nostdlib $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=res/agent_bin_$*.map -Wl,--end-group \
-    -Wl,--allow-multiple-definition -Ttext=$(call plus, $*, 0x1000) -o res/agent_bin_$*
+    -Wl,--allow-multiple-definition -Ttext=$(call plus, $*, 0x1190) -o res/agent_bin_$*
 
 .PRECIOUS: agent_% 
 
