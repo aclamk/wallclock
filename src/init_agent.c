@@ -27,8 +27,8 @@
 
 extern uint64_t _binary_header_start[0];
 
-extern uint32_t _binary_rel_bin_start[0];
-extern uint32_t _binary_rel_bin_end[0];
+extern uint32_t _binary_relocations_start[0];
+extern uint32_t _binary_relocations_end[0];
 
 extern char _stack_top[0];
 extern char _stack_bottom[0];
@@ -91,8 +91,8 @@ void fix_auxv(uint64_t* p, size_t items)
 void apply_relocations(char* image_position, uint32_t diff)
 {
   //uint32_t diff = (uint32_t)_binary_agent_nh_bin_start;
-  uint32_t* rel = _binary_rel_bin_start;
-  while(rel != _binary_rel_bin_end)
+  uint32_t* rel = _binary_relocations_start;
+  while(rel != _binary_relocations_end)
   {
     int32_t offset = *rel;
     if(offset >= 0) {

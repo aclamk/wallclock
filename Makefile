@@ -43,6 +43,8 @@ OBJS_WALLCLOCK = obj/wallclock/manager.o \
 OBJS = $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT)
 OBJ_DIRS = $(sort $(dir $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT)))
 #$(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT): $(OBJ_DIRS)
+PROGS = copy_header find_relocs bin/testprog bin/wallclock
+RES = res/relocations res/relocations.o res/header res/headers.o
 
 DIRS = bin res $(OBJ_DIRS)
 dirs: $(DIRS)
@@ -51,7 +53,7 @@ $(DIRS):
 
 clean:
 	echo $(GCC_MACHINE) $(GCC_VERSION)
-	rm -f $(OBJS)
+	rm -f $(OBJS) $(PROGS) $(RES) res/*
 
 testprog: bin/testprog
 wallclock: bin/wallclock
@@ -79,70 +81,65 @@ plus = $(shell echo $$(( $(1) + $(2) )) )
 agent.bin: agent_0x00000000
 	cp $^ $@
 
-res/agent_bin_% res/map.%: res/agent.%.elf $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) libunwind liblzma Makefile
+res/agent_bin_% res/agent_bin_%.map: res/agent.%.elf $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) libunwind liblzma Makefile
 	g++ -fuse-ld=gold -static -s -Wl,--start-group -Wl,--oformat -Wl,binary \
 	-fPIE -fpic -Wl,--build-id=none -nostdlib $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) \
-    $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=res/map.$* -Wl,--end-group \
+    $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=res/agent_bin_$*.map -Wl,--end-group \
     -Wl,--allow-multiple-definition -Ttext=$(call plus, $*, 0x1000) -o res/agent_bin_$*
 
 .PRECIOUS: agent_% 
 
-res/header_%: res/agent.%.elf res/map.% copy_header
-	./copy_header res/agent.$*.elf $$(sed -n '/ _start$$/ s/_start// p' res/map.$*) res/header_$*
-	
+res/header_%: res/agent.%.elf res/agent_bin_%.map copy_header
+	./copy_header res/agent.$*.elf $$(sed -n '/ _start$$/ s/_start// p' res/agent_bin_$*.map) res/header_$*
+
 res/agent_nh_%: res/agent_bin_%
 	tail -c +$(call plus, $*, 0x1001) res/agent_bin_$* > res/agent_nh_$*
 
-res/agent_wh_%: res/agent_bin_% res/agent.%.elf res/map.% copy_header    
+res/agent_wh_%: res/agent_bin_% res/agent.%.elf res/agent.%.elf.map copy_header    
 	tail -c +$(call plus, $*, 1) res/agent_bin_$* > res/agent_wh_$*
-	./copy_header res/agent.$*.elf $$(sed -n '/ _start$$/ s/_start// p' res/map.$*) res/agent_wh_$*
+	./copy_header res/agent.$*.elf $$(sed -n '/ _start$$/ s/_start// p' res/agent.$*.elf.map) res/agent_wh_$*
 
 
 
-header: res/header_0x00000000
+res/header: res/header_0x00000000
 	cp $< $@ 
 
-agent_nh.bin: res/agent_nh_0x00000000
+res/agent_nh.bin: res/agent_nh_0x00000000
 	cp $< $@
 
 
-rel.bin: find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000
+res/relocations: find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000
 	./find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000 0x12345000 $@
 
-rel_%: find_relocs res/agent_wh_0x00000000 res/agent_wh_% rel.bin
+rel_%: find_relocs res/agent_wh_0x00000000 res/agent_wh_% res/relocations
 	./find_relocs res/agent_wh_0x00000000 res/agent_wh_$* $* $@
-	diff $@ rel.bin
+	diff $@ res/relocations
 
 
-header.o: header
-	objcopy --rename-section .data=.header -I binary header -O elf64-x86-64 -B i386 header.o
+res/header.o: res/header
+	cd res; objcopy --rename-section .data=.header -I binary header -O elf64-x86-64 -B i386 header.o
 
-rel.bin.o: rel.bin
-	objcopy --rename-section .data=.rel.bin -I binary rel.bin -O elf64-x86-64 -B i386 rel.bin.o
-	
-agent_nh.bin.o: agent_nh.bin
-	objcopy --rename-section .data=.agent.bin -I binary agent_nh.bin -O elf64-x86-64 -B i386 agent_nh.bin.o
+res/relocations.o: res/relocations
+	cd res; objcopy --rename-section .data=.rel.bin -I binary relocations -O elf64-x86-64 -B i386 relocations.o
 
-POBJS_AGENT = $(OBJS_BOOTUP) rel.bin.o header.o agent_nh.bin.o
- 
+res/agent_nh.bin.o: res/agent_nh.bin
+	cd res; objcopy --rename-section .data=.agent.bin -I binary agent_nh.bin -O elf64-x86-64 -B i386 agent_nh.bin.o
+
+POBJS_AGENT = $(OBJS_BOOTUP) res/relocations.o res/header.o res/agent_nh.bin.o
+
 pagent.rel: $(POBJS_AGENT) Makefile script-loader 
 	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
 	-static -s -nostdlib -fPIE -fpic -Wl,--build-id=none \
 	-Wl,--start-group $(POBJS_AGENT) -Wl,--end-group -o $@ -T script-loader
 
 rel_check: res/rel_0x00112000 res/rel_0x13579000 res/rel_0x2648a000 res/rel_0x18375000
-	 
-	    	
-bin/agent.elf: $(OBJS_AGENT) libunwind liblzma Makefile 
-	g++ -fuse-ld=gold -Ttext=0x10001000 -Wl,--start-group -static \
-	-fPIE -fpic -Wl,--build-id=none -nostdlib $(SOBJS) \
-    -o bin/agent.elf $(OBJS_AGENT) \
-    $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,--end-group
 
-res/agent.%.elf: $(OBJS_AGENT) $(OBJS_AGENT_EXTRA) libunwind liblzma Makefile
+
+
+res/agent.%.elf res/agent.%.elf.map: $(OBJS_AGENT) $(OBJS_AGENT_EXTRA) libunwind liblzma Makefile
 	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -fPIE -fpic -Wl,--build-id=none -nostdlib -static \
 	-Wl,--start-group $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
-    -Wl,--allow-multiple-definition -Wl,-Map=res/agent.$*.map -o res/agent.$*.elf
+	-Wl,--allow-multiple-definition -Wl,-Map=res/agent.$*.elf.map -o res/agent.$*.elf
 
 DEBUG = -O0 -g
 
@@ -178,19 +175,19 @@ bin/test_agent_relocated: src/test_agent_relocated.cpp res/agent_wh_0x00000000 o
 
 bin/test_agent_anyplace: src/test_agent_anyplace.cpp pagent.rel
 	g++ -static $< -o $@
-	
-	
+
+
 bin/wallclock: $(OBJS_WALLCLOCK) libagent.so bin
 	g++ -o $@ $(OBJS_WALLCLOCK) -lpthread -lunwind -ldl
 
 bin/testprog: src/testprog.cpp obj/largecode.o bin
 	g++ src/testprog.cpp obj/largecode.o -o $@ -lpthread
-	
+
 copy_header: src/copy_header.cpp
 	g++ -o $@ $^ -Ielfio $(DEBUG)
-	
+
 find_relocs: src/find_relocs.cpp
 	g++ -o $@ $^ $(DEBUG)
-	
+
 init_agent: init_agent.o syscall.o
 	g++ -o $@ $^
