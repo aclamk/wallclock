@@ -125,7 +125,10 @@ res/relocations.o: res/relocations
 res/agent_nh.bin.o: res/agent_nh.bin
 	cd res; objcopy --rename-section .data=.agent.bin -I binary agent_nh.bin -O elf64-x86-64 -B i386 agent_nh.bin.o
 
-POBJS_AGENT = $(OBJS_BOOTUP) res/relocations.o res/header.o res/agent_nh.bin.o
+res/agent.0x00000000.bin.o: res/agent.0x00000000.elf
+	cd res; objcopy --rename-section .data=.agent.bin -I binary $(notdir $^) -O elf64-x86-64 -B i386 $(notdir $@)
+
+POBJS_AGENT = $(OBJS_BOOTUP) res/relocations.o res/header.o res/agent.0x00000000.bin.o
 
 pagent.rel: $(POBJS_AGENT) Makefile script-loader 
 	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
