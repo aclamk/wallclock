@@ -14,7 +14,6 @@ SECTIONS
   PROVIDE (_stack_top = .);
   . = . + 65536;
   PROVIDE (_stack_bottom = .);
-  .header : { *(.header*) }
   . = ALIGN(4096);
   .agent.bin : { *(.agent.bin*) }
 }

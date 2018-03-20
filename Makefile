@@ -85,7 +85,7 @@ res/agent_bin_% res/agent_bin_%.map: res/agent.%.elf $(OBJS_AGENT_EXTRA) $(OBJS_
 	g++ -fuse-ld=gold -static -s -Wl,--start-group -Wl,--oformat -Wl,binary \
 	-fPIE -fpic -Wl,--build-id=none -nostdlib $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) \
     $(LIBUNWIND) $(LIBLZMA) -pthread -Wl,-Map=res/agent_bin_$*.map -Wl,--end-group \
-    -Wl,--allow-multiple-definition -Ttext=$(call plus, $*, 0x1190) -o res/agent_bin_$*
+    -Wl,--allow-multiple-definition -Ttext=$* -o res/agent_bin_$*
 
 .PRECIOUS: agent_% 
 
@@ -108,8 +108,14 @@ res/agent_nh.bin: res/agent_nh_0x00000000
 	cp $< $@
 
 
-res/relocations: find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000
-	./find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000 0x12345000 $@
+#res/relocations: find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000
+#	./find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000 0x12345000 $@
+
+res/strip.agent.%.elf: res/agent.%.elf 
+	strip $^ -o $@
+
+res/relocations: find_relocs res/agent.0x00000000.wh res/agent.0x12345000.wh
+	./find_relocs res/agent.0x00000000.wh res/agent.0x12345000.wh 0x12345000 $@
 
 rel_%: find_relocs res/agent_wh_0x00000000 res/agent_wh_% res/relocations
 	./find_relocs res/agent_wh_0x00000000 res/agent_wh_$* $* $@
@@ -125,10 +131,10 @@ res/relocations.o: res/relocations
 res/agent_nh.bin.o: res/agent_nh.bin
 	cd res; objcopy --rename-section .data=.agent.bin -I binary agent_nh.bin -O elf64-x86-64 -B i386 agent_nh.bin.o
 
-res/agent.0x00000000.bin.o: res/agent.0x00000000.elf
+res/agent.0x00000000.wh.o: res/agent.0x00000000.wh
 	cd res; objcopy --rename-section .data=.agent.bin -I binary $(notdir $^) -O elf64-x86-64 -B i386 $(notdir $@)
 
-POBJS_AGENT = $(OBJS_BOOTUP) res/relocations.o res/header.o res/agent.0x00000000.bin.o
+POBJS_AGENT = $(OBJS_BOOTUP) res/relocations.o res/agent.0x00000000.wh.o
 
 pagent.rel: $(POBJS_AGENT) Makefile script-loader 
 	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
@@ -138,12 +144,23 @@ pagent.rel: $(POBJS_AGENT) Makefile script-loader
 rel_check: res/rel_0x00112000 res/rel_0x13579000 res/rel_0x2648a000 res/rel_0x18375000
 
 
-
 res/agent.%.elf res/agent.%.elf.map: $(OBJS_AGENT) $(OBJS_AGENT_EXTRA) libunwind liblzma Makefile
-	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x1000) -fPIE -fpic -Wl,--build-id=none -nostdlib -static \
+	g++ -fuse-ld=gold -Ttext=$* \
+	-fPIE -fpic -Wl,--build-id=none -nostdlib -static \
 	-Wl,--start-group $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
 	-Wl,--allow-multiple-definition -Wl,-Map=res/agent.$*.elf.map -o res/agent.$*.elf
 
+res/agent.%.bin res/agent.%.bin.map: $(OBJS_AGENT) $(OBJS_AGENT_EXTRA) libunwind liblzma Makefile
+	g++ -fuse-ld=gold -Ttext=$(call plus, $*, 0x190) -Wl,--oformat -Wl,binary \
+	-fPIE -fpic -Wl,--build-id=none -nostdlib -static \
+	-Wl,--start-group $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
+	-Wl,--allow-multiple-definition -Wl,-Map=res/agent.$*.bin.map -o res/agent.$*.bin
+
+
+res/agent.%.wh: res/agent.%.elf res/agent.%.bin
+	head -c $$((0x190)) res/agent.$*.elf >$@
+	tail -c +$(call plus, $*, 0x191) res/agent.$*.bin >>$@
+    
 DEBUG = -O0 -g
 
 $(OBJS_AGENT_CPP): obj/agent/%.o: src/%.cpp
