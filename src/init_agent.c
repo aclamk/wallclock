@@ -9,6 +9,30 @@
 #include <fcntl.h>
 #include <inttypes.h>
 
+#define EI_NIDENT     16
+typedef uint16_t Elf_Half;
+typedef uint32_t Elf_Word;
+typedef uint64_t Elf64_Addr;
+typedef uint64_t Elf64_Off;
+
+struct Elf64_Ehdr {
+    unsigned char e_ident[EI_NIDENT];
+    Elf_Half    e_type;
+    Elf_Half    e_machine;
+    Elf_Word    e_version;
+    Elf64_Addr  e_entry;
+    Elf64_Off   e_phoff;
+    Elf64_Off   e_shoff;
+    Elf_Word    e_flags;
+    Elf_Half    e_ehsize;
+    Elf_Half    e_phentsize;
+    Elf_Half    e_phnum;
+    Elf_Half    e_shentsize;
+    Elf_Half    e_shnum;
+    Elf_Half    e_shstrndx;
+};
+
+
 /*
   @@init
   agent_init
@@ -25,7 +49,7 @@
 
 */
 
-extern uint64_t _binary_header_start[0];
+//extern uint64_t _binary_header_start[0];
 
 extern uint32_t _binary_relocations_start[0];
 extern uint32_t _binary_relocations_end[0];
@@ -33,8 +57,13 @@ extern uint32_t _binary_relocations_end[0];
 extern char _stack_top[0];
 extern char _stack_bottom[0];
 
-extern char _binary_agent_nh_bin_start[0];
-extern char _binary_agent_nh_bin_end[0];
+//extern char _binary_agent_nh_bin_start[0];
+//extern char _binary_agent_nh_bin_end[0];
+
+extern char _binary_agent_0x00000000_wh_start[0];
+extern char _binary_agent_0x00000000_wh_end[0];
+
+
 
 long int raw_syscall (long int __sysno, ...);
 void agent_thread_extract_param();
@@ -79,12 +108,12 @@ int load_auxv(void* dst)
   return auxv_size;
 }
 
-void fix_auxv(uint64_t* p, size_t items)
+void fix_auxv(uint64_t* p, size_t items, struct Elf64_Ehdr* header)
 {
   for (int i = 0; i<items; i++)
   {
-    if (p[i*2] == 3) p[i*2+1] = (uint64_t)&_binary_header_start[2];
-    if (p[i*2] == 5) p[i*2+1] = _binary_header_start[1];
+    if (p[i*2] == 3) p[i*2+1] = (uint64_t)(((char*)header) + header->e_phoff);//(uint64_t)&_binary_header_start[2]; //segments
+    if (p[i*2] == 5) p[i*2+1] = header->e_phnum;//_binary_header_start[1]; //segments_num
   }
 }
 
@@ -164,16 +193,19 @@ void wait_tracer() {
 
 void agent_thread(uint64_t connection_id)
 {
+  struct Elf64_Ehdr* header = (struct Elf64_Ehdr*) _binary_agent_0x00000000_wh_start;
   int auxv_size = load_auxv(_stack_top);
   if (auxv_size >= 0 && auxv_size < 4096) {
-    fix_auxv((uint64_t*)_stack_top, auxv_size/(sizeof(uint64_t) * 2));
+    fix_auxv((uint64_t*)_stack_top, auxv_size/(sizeof(uint64_t) * 2), header);
   }
-  apply_relocations((char*)_binary_header_start, (uint32_t)(uint64_t)_binary_header_start);
+  apply_relocations((char*)_binary_agent_0x00000000_wh_start,
+                    (uint32_t)(uint64_t)_binary_agent_0x00000000_wh_start);
   if(connection_id & 0x100000000LL) {
     wait_tracer();
   }
   connection_id = connection_id & 0xffffffff;
-  call_start((void (*)())_binary_header_start[0], (void (*)())atexit_x,
+
+  call_start((void (*)())header->e_entry /*fixed by apply_relocations*/, (void (*)())atexit_x,
              _stack_top, auxv_size, connection_id);
 }
 
