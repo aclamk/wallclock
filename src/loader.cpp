@@ -180,9 +180,10 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
   return true;
 }
 
-
-
-
+extern "C" {
+  extern char _binary_relagent_start[0];
+  extern char _binary_relagent_end[0];
+}
 
 bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
 {
@@ -207,26 +208,13 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
     return false; //was not able to connect to any of threads
 
   int res;
-  char* local_image;
-  struct stat buf;
-  int fd = open("pagent.rel",O_RDONLY);
-  if (fd >= 0) {
-    res = fstat(fd, &buf);
-    if (res == 0) {
-      local_image = new char[buf.st_size];
-      //ptr = (char*)mmap((void*)0x10000000, buf.st_size*2, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANON|MAP_FIXED, -1, 0);
-      res = read(fd, local_image, buf.st_size);
-    }
-    close (fd);
-    if (res != buf.st_size) return false;
-  }
 
   user_regs_struct regs;
   user_regs_struct mmap_result;
-  pt.inject_syscall(syscall_rip,[&buf](user_regs_struct& regs){
+  pt.inject_syscall(syscall_rip,[](user_regs_struct& regs){
     regs.rax = SYS_mmap;
     regs.rdi = 0;
-    regs.rsi = buf.st_size*2;
+    regs.rsi = (_binary_relagent_end - _binary_relagent_start) * 2;
     regs.rdx = PROT_READ|PROT_WRITE|PROT_EXEC;
     regs.r10 = MAP_PRIVATE|MAP_ANON|MAP_32BIT;
     regs.r8 = -1;
@@ -236,10 +224,10 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
   char* remote_image = (char*) mmap_result.rax;
   struct iovec local_iov;
   struct iovec remote_iov;
-  local_iov.iov_base = local_image;
-  local_iov.iov_len = buf.st_size;
+  local_iov.iov_base = _binary_relagent_start;
+  local_iov.iov_len = _binary_relagent_end - _binary_relagent_start;
   remote_iov.iov_base = remote_image;
-  remote_iov.iov_len = buf.st_size;
+  remote_iov.iov_len = _binary_relagent_end - _binary_relagent_start;
 
   res = process_vm_writev(remote, &local_iov, 1, &remote_iov, 1, 0);
   pt.execute_init((uint64_t)remote_image, pause_for_ptrace?remote_leader|0x100000000:remote_leader);

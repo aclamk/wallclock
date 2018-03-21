@@ -92,28 +92,6 @@ res/agent_bin_% res/agent_bin_%.map: res/agent.%.elf $(OBJS_AGENT_EXTRA) $(OBJS_
 res/header_%: res/agent.%.elf res/agent_bin_%.map copy_header
 	./copy_header res/agent.$*.elf $$(sed -n '/ _start$$/ s/_start// p' res/agent_bin_$*.map) res/header_$*
 
-#res/agent_nh_%: res/agent_bin_%
-#	tail -c +$(call plus, $*, 0x1001) res/agent_bin_$* > res/agent_nh_$*
-
-#res/agent_wh_%: res/agent_bin_% res/agent.%.elf res/agent.%.elf.map copy_header    
-#	tail -c +$(call plus, $*, 1) res/agent_bin_$* > res/agent_wh_$*
-#	./copy_header res/agent.$*.elf $$(sed -n '/ _start$$/ s/_start// p' res/agent.$*.elf.map) res/agent_wh_$*
-
-
-
-#res/header: res/header_0x00000000
-#	cp $< $@ 
-
-#res/agent_nh.bin: res/agent_nh_0x00000000
-#	cp $< $@
-
-
-#res/relocations: find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000
-#	./find_relocs res/agent_wh_0x00000000 res/agent_wh_0x12345000 0x12345000 $@
-
-#res/strip.agent.%.elf: res/agent.%.elf 
-#	strip $^ -o $@
-
 res/relocations: find_relocs res/agent.0x00000000.wh res/agent.0x12345000.wh
 	./find_relocs res/agent.0x00000000.wh res/agent.0x12345000.wh 0x12345000 $@
 
@@ -136,10 +114,13 @@ res/agent.0x00000000.wh.o: res/agent.0x00000000.wh
 
 POBJS_AGENT = $(OBJS_BOOTUP) res/relocations.o res/agent.0x00000000.wh.o
 
-pagent.rel: $(POBJS_AGENT) Makefile script-loader 
-	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=map.pagent.rel \
+res/relagent: $(POBJS_AGENT) Makefile script-loader 
+	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=res/relagent.map \
 	-static -s -nostdlib -fPIE -fpic -Wl,--build-id=none \
 	-Wl,--start-group $(POBJS_AGENT) -Wl,--end-group -o $@ -T script-loader
+
+res/relagent.o: res/relagent
+	cd res; objcopy -I binary relagent -O elf64-x86-64 -B i386 relagent.o
 
 rel_check: res/rel_0x00112000 res/rel_0x13579000 res/rel_0x2648a000 res/rel_0x18375000
 
@@ -199,8 +180,8 @@ bin/test_agent_anyplace: src/test_agent_anyplace.cpp pagent.rel
 	g++ -static $< -o $@
 
 
-bin/wallclock: $(OBJS_WALLCLOCK) libagent.so bin
-	g++ -o $@ $(OBJS_WALLCLOCK) -lpthread -lunwind -ldl
+bin/wallclock: $(OBJS_WALLCLOCK) libagent.so res/relagent.o res bin
+	g++ -o $@ $(OBJS_WALLCLOCK) res/relagent.o -lpthread -lunwind -ldl
 
 bin/testprog: src/testprog.cpp obj/largecode.o bin
 	g++ src/testprog.cpp obj/largecode.o -o $@ -lpthread
