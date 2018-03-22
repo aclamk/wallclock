@@ -214,7 +214,7 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
   pt.inject_syscall(syscall_rip,[](user_regs_struct& regs){
     regs.rax = SYS_mmap;
     regs.rdi = 0;
-    regs.rsi = (_binary_relagent_end - _binary_relagent_start) * 2;
+    regs.rsi = _binary_relagent_end - _binary_relagent_start;
     regs.rdx = PROT_READ|PROT_WRITE|PROT_EXEC;
     regs.r10 = MAP_PRIVATE|MAP_ANON|MAP_32BIT;
     regs.r8 = -1;

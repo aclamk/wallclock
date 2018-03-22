@@ -139,10 +139,10 @@ res/agent.%.bin res/agent.%.bin.map: header_size res/agent.%.elf $(OBJS_AGENT) $
 	-Wl,--start-group $(OBJS_AGENT_EXTRA) $(OBJS_AGENT) $(SOBJS) $(LIBUNWIND) $(LIBLZMA) -Wl,--end-group \
 	-Wl,--allow-multiple-definition -Wl,-Map=res/agent.$*.bin.map -o res/agent.$*.bin
 
-
-res/agent.%.wh: res/agent.%.elf res/agent.%.bin
+res/agent.%.wh: res/agent.%.elf res/agent.%.bin elf_end
 	head -c $(shell ./header_size res/agent.$*.elf) res/agent.$*.elf >$@
 	tail -c +$(call plus, $* + 1, $(shell ./header_size res/agent.$*.elf)) res/agent.$*.bin >>$@
+	head -c $$(( $$(./elf_end res/agent.$*.elf) - $$(stat --format=%s res/agent.$*.bin) )) /dev/zero >>$@
     
 DEBUG = -O0 -g
 
@@ -190,6 +190,9 @@ copy_header: src/copy_header.cpp
 	g++ -o $@ $^ -Ielfio $(DEBUG)
 
 header_size: src/header_size.cpp
+	g++ -o $@ $^ -Ielfio $(DEBUG)
+
+elf_end: src/elf_end.cpp
 	g++ -o $@ $^ -Ielfio $(DEBUG)
 
 find_relocs: src/find_relocs.cpp
