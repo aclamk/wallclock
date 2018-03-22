@@ -154,7 +154,7 @@ $(OBJS_AGENT_EXTRA): obj/agent/%.o: src/%.cpp
 	g++ -c $< -o $@ -fPIC $(DEBUG)
 
 $(OBJS_BOOTUP_C): obj/bootup/%.o: src/%.c
-	gcc -c $< -o $@ -fPIC $(DEBUG)
+	gcc -c $< -o $@ -fno-stack-protector -fPIC $(DEBUG)
 $(OBJS_BOOTUP_ASM): obj/bootup/%.o: src/%.asm
 	as -c $< -o $@
 
