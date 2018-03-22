@@ -1,4 +1,4 @@
-all: dirs wallclock libagent.so pagent.rel
+all: dirs wallclock libagent.so
 tests: testprog test_agent_0x10000000 test_agent_anyplace test_agent_relocated
 
 .phony: libunwind liblzma
