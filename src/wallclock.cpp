@@ -28,7 +28,6 @@
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
 
-
 #include "callstep.h"
 
 #include "manager.h"

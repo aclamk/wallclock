@@ -249,7 +249,6 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pa
   //first try to connect to existing agent
   UnixIO io_m;
   int server_fd = io_m.server(remote_leader);
-  printf("check_server_fd=%d\n",server_fd);
   if (server_fd != -1) {
     close(server_fd);
     if (use_agent_so) {

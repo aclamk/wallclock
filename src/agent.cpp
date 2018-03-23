@@ -109,14 +109,6 @@ void _init_agent()
   _remote_return(111111);
 }
 
-void _init_wallclock()
-{
-  printf("INIT WALLCLOCK");
-  for(int i=0;i<100;i++)
-    printf("INIT %d\n",i);
-}
-
-
 extern "C" void grab_callstack(void);
 
 struct conveyor
@@ -177,12 +169,8 @@ public:
 
 static constexpr uint64_t impossible_ip = 0x7fffeeeeddddccccLL;
 
-extern "C"
-void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ctx* sc);
-
 void _get_backtrace(uint64_t rip, uint64_t rbp, uint64_t rsp, thread_sampling_ctx* sc)
 {
-  //printf("get_backtrace start \n");
   sc->backtrace_injected++;
   if (sc->lock.exchange(true) == false)
   {
@@ -290,8 +278,6 @@ void thread_sampling_ctx::peek()
   consume();
 }
 
-
-
 bool thread_sampling_ctx::dump_tree(UnixIO& io, uint32_t total_samples, double suppress)
 {
   bool res;
@@ -300,8 +286,6 @@ bool thread_sampling_ctx::dump_tree(UnixIO& io, uint32_t total_samples, double s
   if (res) io.write(depth);
   return res;
 }
-
-
 
 bool Agent::dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples, double suppress)
 {
@@ -428,11 +412,9 @@ bool Agent::probe()
       }
       while ((wpid == 0) && (iter < 100));
       if (wpid==0) {
-        //printf("cannot stop thread %d\n", threads[i]->tid);
         continue;
       }
       if (WSTOPSIG(wstatus) != SIGTRAP) {
-        //printf("NOT SIGTRAP %d \n",WSTOPSIG(wstatus));
         ptrace(PTRACE_CONT, threads[i]->tid, 0, 0);
         continue;
       }
@@ -443,16 +425,8 @@ bool Agent::probe()
         {
           _get_backtrace(regs.rip, regs.rbp, regs.rsp, threads[i]);
         }
-        else
-        {
-          //printf("failed to PTRACE_GETREGS\n");
-        }
       }
       ret = ptrace(PTRACE_CONT, threads[i]->tid, 0, 0);
-    }
-    else
-    {
-      //printf("unsuccessfull stop of %d\n",threads[i]->tid);
     }
     threads[i]->time_suspended += (now() - start);
   }
@@ -596,14 +570,11 @@ bool Agent::worker(pid_t pid)
   int server_fd;
   int conn_fd;
   server_fd = io.server(pid);
-  printf("server_fd=%d\n",server_fd);
 
   bool exit_command = false;
   do
   {
-    printf("---- waiting connect ----\n");
     conn_fd = io.accept(server_fd);
-    printf("conn_fd=%d\n", conn_fd);
     int r;
     bool do_continue = true;
 
@@ -674,7 +645,6 @@ bool Agent::worker(pid_t pid)
     close(conn_fd);
     detach_threads();
   } while (exit_command == false);
-  printf("exit_command done\n");
   close(server_fd);
   return true;
 }
@@ -692,7 +662,6 @@ int Agent::worker(void* arg, pid_t pid)
 
 int main(int argc, char** argv)
 {
-  printf("here!!!\n");
   pid_t pid = 0;
   if (argc>1) {
     pid = (uint64_t)argv[1];
