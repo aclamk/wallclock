@@ -50,6 +50,8 @@ public:
   static int worker(void*, pid_t);
   bool scan_libraries(const std::string& excluded_library);
   bool load_symbols(const std::string& library, uint64_t begin);
+  bool set_image();
+  bool get_memory();
   std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);
 
   enum {
@@ -57,7 +59,9 @@ public:
     CMD_DUMP_TREE=4,
     CMD_TRACE_ATTACH=6,
     CMD_PROBE=7,
-    CMD_READ_SYMBOLS=8
+    CMD_READ_SYMBOLS=8,
+    CMD_ADD_MEMORY=9,
+    CMD_GET_MEMORY=10
   };
 
 private:
@@ -68,6 +72,8 @@ private:
     std::string name;
     int64_t size;
   };
+  uint64_t image_begin;
+  uint64_t image_size;
   std::vector<thread_sampling_ctx*> threads;
   UnixIO io;
   std::map<uint64_t, Symbol> symbols;

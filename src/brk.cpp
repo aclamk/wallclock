@@ -6,8 +6,8 @@
 extern "C"
 int __brk(void *addr);
 
-static void* brk_base = nullptr;
-static size_t brk_size = 0;
+void* brk_base = nullptr;
+size_t brk_size = 0;
 void *__curbrk = 0;
 
 int __brk(void *addr)

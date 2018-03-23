@@ -506,6 +506,34 @@ bool Agent::scan_libraries(const std::string& excluded_library)
   return false;
 }
 
+bool Agent::set_image()
+{
+  uint64_t addr;
+  uint64_t size;
+  bool res = true;
+  if (res) res = io.read(addr);
+  if (res) res = io.read(size);
+  if (res) image_begin = addr;
+  if (res) image_size = size;
+  return res;
+}
+
+extern void* brk_base;
+extern size_t brk_size;
+
+bool Agent::get_memory()
+{
+  bool res = true;
+  uint32_t regions_count = 2;//memory_regions.size();
+  if (res) res = io.write(regions_count);
+  if (res) res = io.write(image_begin);
+  if (res) res = io.write(image_size);
+  uint64_t addr = (uint64_t)brk_base;
+  uint64_t size = (uint64_t)brk_size;
+  if (res) res = io.write(addr);
+  if (res) res = io.write(size);
+  return res;
+}
 
 bool Agent::load_symbols(const std::string& library, uint64_t begin)
 {
@@ -628,6 +656,16 @@ bool Agent::worker(pid_t pid)
             scan_libraries("agent.so");
             uint32_t confirm = 0;
             do_continue = io.write(confirm);
+            break;
+          }
+          case CMD_ADD_MEMORY:
+          {
+            set_image();
+            break;
+          }
+          case CMD_GET_MEMORY:
+          {
+            get_memory();
             break;
           }
         }

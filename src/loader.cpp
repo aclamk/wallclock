@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <sys/uio.h>
 #include <vector>
+#include <set>
 #include <dirent.h>
 #include <thread>
 #include <dlfcn.h>
@@ -100,9 +101,9 @@ pid_t find_leader_thread(pid_t pid)
   return leader_pid;
 }
 
-std::vector<pid_t> list_threads_in_group(pid_t pid)
+std::set<pid_t> list_threads_in_group(pid_t pid)
 {
-  std::vector<pid_t> threads;
+  std::set<pid_t> threads;
   std::string proc_tasks = "/proc/" + std::to_string(pid) + "/task";
   DIR *dir;
   struct dirent *ent;
@@ -114,7 +115,7 @@ std::vector<pid_t> list_threads_in_group(pid_t pid)
       int tid = strtol(ent->d_name, &endptr, 10);
       if (*endptr== '\0')
       {
-        threads.push_back(tid);
+        threads.insert(tid);
       }
     }
     closedir (dir);
@@ -124,12 +125,12 @@ std::vector<pid_t> list_threads_in_group(pid_t pid)
 
 monitored_thread pause_outside_syscall(pid_t remote_leader)
 {
-  std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
+  std::set<pid_t> threads = list_threads_in_group(remote_leader);
   std::vector<monitored_thread> mt;
   monitored_thread pt;
   while (pt.m_target == 0) {
-    for (size_t i = 0; i < threads_in_group.size(); i++) {
-      if (pt.attach(threads_in_group[i])) {
+    for (auto i = threads.begin(); i != threads.end(); i++) {
+      if (pt.attach(*i)) {
         if (pt.pause_outside_syscall()) {
           break;
         }
@@ -185,23 +186,23 @@ extern "C" {
   extern char _binary_relagent_end[0];
 }
 
-bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
+bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace,
+                       std::pair<uint64_t, uint64_t>& addr)
 {
-  uint64_t syscall_rip;
-  std::vector<pid_t> threads_in_group = list_threads_in_group(remote_leader);
-  size_t i;
-  for(i = 0; i < threads_in_group.size(); i++)
+  uint64_t syscall_rip = 0;
+  std::set<pid_t> threads = list_threads_in_group(remote_leader);
+
+  for(auto i = threads.begin(); i != threads.end(); i++)
   {
     monitored_thread pt;
-    if (pt.seize(threads_in_group[i])) {
+    if (pt.seize(*i)) {
       pt.locate_syscall(&syscall_rip);
       pt.detach();
       break;
     }
   }
-  if (i == threads_in_group.size())
+  if (syscall_rip == 0)
     return false; //was not able to locate place of rip
-
 
   monitored_thread pt = pause_outside_syscall(remote_leader);
   if (pt.m_target == 0)
@@ -211,7 +212,7 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
 
   user_regs_struct regs;
   user_regs_struct mmap_result;
-  pt.inject_syscall(syscall_rip,[](user_regs_struct& regs){
+  pt.inject_syscall(syscall_rip,[&](user_regs_struct& regs){
     regs.rax = SYS_mmap;
     regs.rdi = 0;
     regs.rsi = _binary_relagent_end - _binary_relagent_start;
@@ -229,6 +230,7 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
   remote_iov.iov_base = remote_image;
   remote_iov.iov_len = _binary_relagent_end - _binary_relagent_start;
 
+  addr = {mmap_result.rax, _binary_relagent_end - _binary_relagent_start};
   res = process_vm_writev(remote, &local_iov, 1, &remote_iov, 1, 0);
   pt.execute_init((uint64_t)remote_image, pause_for_ptrace?remote_leader|0x100000000:remote_leader);
   pt.wait_return();
@@ -242,7 +244,8 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace)
 bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pause_for_ptrace)
 {
   pid_t remote_leader = find_leader_thread(remote);
-
+  std::pair<uint64_t, uint64_t> addr;
+  bool addr_used = false;
   //first try to connect to existing agent
   UnixIO io_m;
   int server_fd = io_m.server(remote_leader);
@@ -262,13 +265,14 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pa
     } else {
       bool b;
       std::thread loader([&](){
-        b = load_binary_agent(remote, remote_leader, pause_for_ptrace);
+        b = load_binary_agent(remote, remote_leader, pause_for_ptrace, addr);
       });
       loader.join();
       if (!b) {
         std::cerr << "Failed to load wallclock agent to remote" << std::endl;
         return false;
       }
+      addr_used = true;
     }
   }
   long ret;
@@ -284,7 +288,8 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pa
   }
   if (conn_fd == -1)
     return false;
-
+  if (addr_used)
+    mgr.set_image(addr.first, addr.second);
   return true;
 }
 

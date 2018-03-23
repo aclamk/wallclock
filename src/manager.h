@@ -16,6 +16,7 @@
 #include "unix_io.h"
 #include <atomic>
 #include <functional>
+#include <vector>
 typedef void interruption_func(void);
 
 typedef uint64_t remote_sampling_ctx;
@@ -95,6 +96,8 @@ public:
   bool trace_attach(pid_t pid);
   bool probe();
   bool read_symbols();
+  bool set_image(uint64_t begin, uint64_t size);
+  bool get_memory(std::vector<std::pair<uint64_t, uint64_t>>& regions);
 };
 
 void execute_command();

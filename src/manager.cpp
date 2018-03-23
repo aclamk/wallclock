@@ -558,4 +558,33 @@ bool Manager::read_symbols()
   return res;
 }
 
+bool Manager::set_image(uint64_t begin, uint64_t size)
+{
+  bool res;
+  int8_t cmd = Agent::CMD_ADD_MEMORY;
+  res = io.write(cmd);
+  if (res) res = io.write(begin);
+  if (res) res = io.write(size);
+  return res;
+}
 
+
+bool Manager::get_memory(std::vector<std::pair<uint64_t, uint64_t>>& regions)
+{
+  bool res;
+  int8_t cmd = Agent::CMD_GET_MEMORY;
+  res = io.write(cmd);
+  uint32_t region_count;
+  if (res) res = io.read(region_count);
+  if (res) {
+    regions.clear();
+    for (size_t i=0; res && i<region_count; i++) {
+      uint64_t addr;
+      uint64_t size;
+      if (res) res = io.read(addr);
+      if (res) res = io.read(size);
+      if (res) regions.emplace_back(addr, size);
+    }
+  }
+  return res;
+}
