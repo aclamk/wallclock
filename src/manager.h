@@ -98,6 +98,7 @@ public:
   bool read_symbols();
   bool set_image(uint64_t begin, uint64_t size);
   bool get_memory(std::vector<std::pair<uint64_t, uint64_t>>& regions);
+  bool terminate();
 };
 
 void execute_command();

@@ -105,7 +105,6 @@ bool UnixIO::read_bytes(void* ptr, size_t size)
   do {
     res = ::read(conn_fd, (char*)ptr + cnt, size - cnt);
     if (res == -1) {
-      printf("read res=%d errno=%d\n",res,errno);
       if (errno == EINTR) continue;
       return false;
     }
@@ -123,7 +122,6 @@ bool UnixIO::write_bytes(const void* ptr, size_t size)
   do {
     res = ::write(conn_fd, (char*)ptr + cnt, size - cnt);
     if (res == -1) {
-      printf("write res=%d errno=%d\n",res,errno);
       if (errno == EINTR) continue;
       return false;
     }

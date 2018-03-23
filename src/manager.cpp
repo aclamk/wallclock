@@ -568,6 +568,17 @@ bool Manager::set_image(uint64_t begin, uint64_t size)
   return res;
 }
 
+bool Manager::terminate()
+{
+  bool res;
+  int8_t cmd = Agent::CMD_TERMINATE;
+  res = io.write(cmd);
+  uint32_t response;
+  if (res) res = io.read(response);
+  if (res) res = (response == 0xdeadbeef);
+  return res;
+
+}
 
 bool Manager::get_memory(std::vector<std::pair<uint64_t, uint64_t>>& regions)
 {

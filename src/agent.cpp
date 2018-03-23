@@ -601,6 +601,7 @@ bool Agent::worker(pid_t pid)
         {
           case CMD_TERMINATE:
             do_continue = false;
+            exit_command = true;
             break;
 
           case CMD_DUMP_TREE:
@@ -645,6 +646,9 @@ bool Agent::worker(pid_t pid)
     close(conn_fd);
     detach_threads();
   } while (exit_command == false);
+
+  uint32_t response = 0xdeadbeef;
+  io.write(response);
   close(server_fd);
   return true;
 }

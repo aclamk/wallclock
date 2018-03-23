@@ -15,7 +15,7 @@ int __brk(void *addr)
   if (brk_base == nullptr) {
     brk_size = 256*1024*1024;
     brk_base = (void*)syscall(SYS_mmap, 0, brk_size, PROT_READ|PROT_WRITE,
-                       MAP_PRIVATE|MAP_ANON|MAP_32BIT, -1, 0);
+                       MAP_PRIVATE|MAP_ANON, -1, 0);
   }
   if (addr == nullptr) {
     __curbrk = brk_base;

@@ -240,6 +240,44 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace,
 }
 
 
+bool unmap_memory(pid_t remote_leader,
+                  const std::vector<std::pair<uint64_t, uint64_t>>& regions)
+{
+  uint64_t syscall_rip = 0;
+  std::set<pid_t> threads = list_threads_in_group(remote_leader);
+
+  for(auto i = threads.begin(); i != threads.end(); i++)
+  {
+    monitored_thread pt;
+    if (pt.seize(*i)) {
+      pt.locate_syscall(&syscall_rip);
+      pt.detach();
+      break;
+    }
+  }
+  if (syscall_rip == 0)
+    return false; //was not able to locate place of rip
+
+  monitored_thread pt = pause_outside_syscall(remote_leader);
+  if (pt.m_target == 0)
+    return false; //was not able to connect to any of threads
+
+  user_regs_struct regs;
+  user_regs_struct unmap_result;
+  for (auto region:regions) {
+    pt.inject_syscall(syscall_rip,[&](user_regs_struct& regs){
+      regs.rax = SYS_munmap;
+      regs.rdi = region.first;
+      regs.rsi = region.second;
+    }, unmap_result);
+    if (unmap_result.rax == -1) return false;
+  }
+  pt.detach();
+
+  return true;
+}
+
+
 
 bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pause_for_ptrace)
 {

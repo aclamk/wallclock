@@ -115,6 +115,9 @@ void print_help() {
   std::cout << help << std::endl;
 }
 
+bool unmap_memory(pid_t remote_leader,
+                  const std::vector<std::pair<uint64_t, uint64_t>>& regions);
+
 int main(int argc, char** argv)
 {
   std::ofstream outfile;
@@ -244,15 +247,16 @@ int main(int argc, char** argv)
   stop_sampling_sig.sa_sigaction = stop_sampling;
   sigaction(SIGINT, &stop_sampling_sig, nullptr);
 
-
   mgr.read_symbols();
   probe(mgr, tids);
   for (auto i = tids.begin(); i != tids.end(); i++) {
     mgr.dump_tree(*output, *i, suppress);
   }
-
+  std::vector<std::pair<uint64_t, uint64_t>> regions;
+  mgr.get_memory(regions);
+  mgr.terminate();
   if (outfile.is_open()) {
     outfile.close();
   }
-
+  unmap_memory(*tids.begin(), regions);
 }
