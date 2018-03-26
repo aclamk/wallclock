@@ -32,6 +32,7 @@
 extern RemoteAPI agent_interface;
 RemoteAPI agent_interface_remote;
 
+extern int verbose_level;
 
 void* locate_library(pid_t pid, const std::string& library_name)
 {
@@ -145,7 +146,8 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
 {
   void* handle = dlopen("libagent.so",RTLD_NOW);
   if (!handle) {
-    std::cout << "unable to load libagent.so" << std::endl;
+    if (verbose_level >= 2)
+      std::cout << "Unable to load libagent.so ." << std::endl;
     return false;
   }
   void* sym = dlsym(handle, "agent_interface");
@@ -156,10 +158,13 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
   void* remote_agent_so = locate_library(remote, "libagent.so");
   assert(my_agent_so != nullptr);
   if (remote_agent_so == nullptr) {
-    std::cout << "remote does not have agent.so library" << std::endl;
+    if (verbose_level >= 2)
+      std::cout << "Remote does not have libagent.so library." << std::endl;
     return false;
   }
   if (memcmp(agent_interface->sanity_marker,"AGENTAPI",8) != 0) {
+    if (verbose_level >= 2)
+      std::cerr << "Target sanity check for libagent.so failed." << std::endl;
     return false;
   }
 
@@ -170,12 +175,14 @@ bool init_agent_so(pid_t remote, pid_t remote_leader)
 
   monitored_thread pt = pause_outside_syscall(remote_leader);
   if (pt.m_target == 0) {
-    std::cerr << "Target " << remote << " cannot be sized" << std::endl;
+    if (verbose_level >= 2)
+      std::cerr << "Target " << remote << " cannot be sized." << std::endl;
     return false;
   }
   if (!pt.execute_remote((interruption_func*)agent_interface_remote._init_agent,
                          (uint64_t)remote_leader)) {
-    std::cerr << "failed to execute remote agent" << std::endl;
+    if (verbose_level >= 2)
+      std::cerr << "Failed attempt to execute remote agent in libagent.so ." << std::endl;
     return false;
   }
   return true;
@@ -190,24 +197,38 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace,
                        std::pair<uint64_t, uint64_t>& addr)
 {
   uint64_t syscall_rip = 0;
+  bool sized_something = false;
   std::set<pid_t> threads = list_threads_in_group(remote_leader);
 
   for(auto i = threads.begin(); i != threads.end(); i++)
   {
     monitored_thread pt;
     if (pt.seize(*i)) {
+      sized_something = true;
       pt.locate_syscall(&syscall_rip);
       pt.detach();
       break;
     }
   }
-  if (syscall_rip == 0)
+
+  if (sized_something == false) {
+    std::cout << "Unable to attach to threads. "
+        "Check setting of /proc/sys/kernel/yama/ptrace_scope." << std::endl;
+    return false;
+  }
+
+  if (syscall_rip == 0) {
+    if (verbose_level >= 2)
+      std::cout << "Unable to pause process and find a syscall." << std::endl;
     return false; //was not able to locate place of rip
+  }
 
   monitored_thread pt = pause_outside_syscall(remote_leader);
-  if (pt.m_target == 0)
+  if (pt.m_target == 0) {
+    if (verbose_level >= 2)
+      std::cout << "Unable to pause remote process outside of syscall." << std::endl;
     return false; //was not able to connect to any of threads
-
+  }
   int res;
 
   user_regs_struct regs;
@@ -221,7 +242,11 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace,
     regs.r8 = -1;
     regs.r9 = 0;
   }, mmap_result);
-  if (mmap_result.rax == -1) return false;
+  if (mmap_result.rax == -1) {
+    if (verbose_level >= 2)
+      std::cout << "Executing mmap for remote agent failed." << std::endl;
+    return false;
+  }
   char* remote_image = (char*) mmap_result.rax;
   struct iovec local_iov;
   struct iovec remote_iov;
@@ -296,7 +321,8 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pa
       });
       loader.join();
       if (!b) {
-        std::cerr << "Unable to use remote agent.so" << std::endl;
+        if (verbose_level >= 1)
+          std::cerr << "Unable to use remote agent.so" << std::endl;
         return false;
       }
     } else {
@@ -306,7 +332,8 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pa
       });
       loader.join();
       if (!b) {
-        std::cerr << "Failed to load wallclock agent to remote" << std::endl;
+        if (verbose_level >= 1)
+          std::cerr << "Failed to load wallclock agent to remote" << std::endl;
         return false;
       }
       addr_used = true;

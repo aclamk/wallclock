@@ -50,7 +50,7 @@ std::atomic<bool> stop_probing{false};
 int delay = 10;
 int sampling_time = 10;
 uint64_t current_time;
-int debug_level = 0;
+int verbose_level = 0;
 
 std::set<pid_t> list_threads_in_group(pid_t pid);
 
@@ -63,7 +63,7 @@ bool probe(Manager& mgr, const std::set<pid_t>& tids)
     res = mgr.trace_attach(*i);
     if (!res)
     {
-      if (debug_level >= 1)
+      if (verbose_level >= 1)
         std::cerr << "Cannot probe thread " << *i << std::endl;
     }
   }
@@ -109,7 +109,8 @@ void print_help() {
 " -d TIME(ms)             TIME interval between samples, in miliseconds. Default 10\n"
 " -s LIMIT                Suppress branches consuming below LIMIT. Default 0\n"
 " -so                     Attempt to use libagent.so. Default is to injected code.\n"
-" -pause                  Pause agent until ptrace/gdb connected (debug).\n"
+" --pause                 Pause agent until ptrace/gdb connected (debug).\n"
+" -l, --no-unload         Do not unload agent on exit.\n"
 " -v -v -v                Increase verbosity.\n"
 " -h, --help              Help\n";
   std::cout << help << std::endl;
@@ -125,6 +126,7 @@ int main(int argc, char** argv)
   double suppress = 0;
   bool load_so = false;
   bool wait_for_ptrace = false;
+  bool unload_on_exit = true;
   int i = 1;
   std::set<pid_t> tids;
   std::set<pid_t> group;
@@ -198,12 +200,16 @@ int main(int argc, char** argv)
       load_so = true;
       continue;
     }
-    if (arg == "-pause") {
+    if (arg == "--pause") {
       wait_for_ptrace = true;
       continue;
     }
     if (arg == "-v") {
-      debug_level++;
+      verbose_level++;
+      continue;
+    }
+    if (arg == "-l" || arg == "--no-unload") {
+      unload_on_exit = false;
       continue;
     }
 
@@ -239,7 +245,10 @@ int main(int argc, char** argv)
   Manager mgr;
   struct sigaction stop_sampling_sig;
 
-  init_agent_interface(mgr, *tids.begin(), load_so, wait_for_ptrace);
+  if (!init_agent_interface(mgr, *tids.begin(), load_so, wait_for_ptrace)) {
+    std::cerr << "Failed to initialize remote agent." << std::endl;
+    return false;
+  }
 
   sigemptyset(&stop_sampling_sig.sa_mask);
   sigaddset(&stop_sampling_sig.sa_mask, SIGINT);
@@ -252,11 +261,13 @@ int main(int argc, char** argv)
   for (auto i = tids.begin(); i != tids.end(); i++) {
     mgr.dump_tree(*output, *i, suppress);
   }
-  std::vector<std::pair<uint64_t, uint64_t>> regions;
-  mgr.get_memory(regions);
-  mgr.terminate();
   if (outfile.is_open()) {
     outfile.close();
   }
-  unmap_memory(*tids.begin(), regions);
+  if (unload_on_exit) {
+    std::vector<std::pair<uint64_t, uint64_t>> regions;
+    mgr.get_memory(regions);
+    mgr.terminate();
+    unmap_memory(*tids.begin(), regions);
+  }
 }
