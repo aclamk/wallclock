@@ -28,7 +28,7 @@
 #include <dirent.h>
 #include <thread>
 #include <dlfcn.h>
-
+#include <iomanip>
 extern RemoteAPI agent_interface;
 RemoteAPI agent_interface_remote;
 
@@ -244,10 +244,15 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace,
   }, mmap_result);
   if (mmap_result.rax == -1) {
     if (verbose_level >= 2)
-      std::cout << "Executing mmap for remote agent failed." << std::endl;
+      std::cout << "Allocating mmap for remote agent failed." << std::endl;
     return false;
   }
   char* remote_image = (char*) mmap_result.rax;
+
+  if (verbose_level>=4)
+    std::cout << "Remote allocated memory for agent: " << (void*)remote_image << "-"
+    << (void*)(remote_image + (_binary_relagent_end - _binary_relagent_start)) << std::endl;
+
   struct iovec local_iov;
   struct iovec remote_iov;
   local_iov.iov_base = _binary_relagent_start;
@@ -260,7 +265,8 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace,
   pt.execute_init((uint64_t)remote_image, pause_for_ptrace?remote_leader|0x100000000:remote_leader);
   pt.wait_return();
   pt.detach();
-
+  if (verbose_level>=1)
+    std::cout << "Agent loaded to address " << (void*)remote_image << std::endl;
   return true;
 }
 
@@ -290,12 +296,18 @@ bool unmap_memory(pid_t remote_leader,
   user_regs_struct regs;
   user_regs_struct unmap_result;
   for (auto region:regions) {
+    if (verbose_level >= 4) std::cerr << "Unmapping remote mem " << (void*)region.first <<
+        "-" << (void*)(region.first + region.second) << std::endl;
     pt.inject_syscall(syscall_rip,[&](user_regs_struct& regs){
       regs.rax = SYS_munmap;
       regs.rdi = region.first;
       regs.rsi = region.second;
     }, unmap_result);
-    if (unmap_result.rax == -1) return false;
+    if (unmap_result.rax == -1) {
+      if (verbose_level >= 1) std::cerr << "Failed unmapping remote mem " << (void*)region.first <<
+          "-" << (void*)(region.first + region.second) << std::endl;
+      return false;
+    }
   }
   pt.detach();
 
@@ -350,10 +362,15 @@ bool init_agent_interface(Manager& mgr, pid_t remote, bool use_agent_so, bool pa
     count++;
     usleep(100*1000);
   }
-  if (conn_fd == -1)
+  if (conn_fd == -1) {
+    if (verbose_level>=1)
+      std::cout << "Failed to initialize remote agent" << std::endl;
     return false;
+  }
   if (addr_used)
     mgr.set_image(addr.first, addr.second);
+  if (verbose_level>=3)
+    std::cout << "Remote agent initialized" << std::endl;
   return true;
 }
 

@@ -17,6 +17,9 @@
 #include <atomic>
 #include <functional>
 #include <vector>
+
+extern int verbose_level;
+
 typedef void interruption_func(void);
 
 typedef uint64_t remote_sampling_ctx;

@@ -58,6 +58,8 @@ bool probe(Manager& mgr, const std::set<pid_t>& tids)
 {
   bool res = true;
   long ret;
+  if (verbose_level >= 4)
+    std::cerr << "Registering probes" << std::endl;
   for (auto i = tids.begin(); i != tids.end(); i++)
   {
     res = mgr.trace_attach(*i);
@@ -65,8 +67,14 @@ bool probe(Manager& mgr, const std::set<pid_t>& tids)
     {
       if (verbose_level >= 1)
         std::cerr << "Cannot probe thread " << *i << std::endl;
+    } else {
+      if (verbose_level >= 4)
+        std::cerr << "Probing thread " << *i << std::endl;
     }
   }
+  if (verbose_level >= 4)
+    std::cerr << "Registering probes done" << std::endl;
+
   uint64_t begin = now();
   uint64_t last_notified = begin - 1000*1000*1000;
 
@@ -77,9 +85,9 @@ bool probe(Manager& mgr, const std::set<pid_t>& tids)
     if (tnow_b - last_notified >= 1000*1000*1000)
     {
       last_notified = tnow_b;
-      std::cout << "samples: " << iter << "\r" << std::flush;
+      if (verbose_level >= 1 && verbose_level < 5) std::cerr << "samples: " << iter << "\r" << std::flush;
+      if (verbose_level >=5) std::cerr << "samples: " << iter << std::endl;
     }
-
     res = mgr.probe();
     assert(res);
     current_time = now();

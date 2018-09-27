@@ -541,10 +541,12 @@ bool Manager::trace_attach(pid_t pid)
 bool Manager::probe()
 {
   bool res;
+  if (verbose_level >= 5) std::cerr << "probe " << std::flush;
   int8_t cmd = Agent::CMD_PROBE;
   uint32_t confirm;
   res = io.write(cmd);
   if (res) res = io.read(confirm);
+  if (verbose_level >= 5) std::cerr << "res=" << res << std::endl;
   return res;
 }
 
