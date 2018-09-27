@@ -7,14 +7,14 @@ libunwind: libunwind/src/.libs/libunwind.a
 libunwind/src/.libs/libunwind.a:
 	cd libunwind; ./autogen.sh
 	make -C libunwind CFLAGS=-fpic
-	
+
 LIBUNWIND = libunwind/src/.libs/libunwind.a
 
 liblzma: liblzma/src/liblzma/.libs/liblzma.a
 liblzma/src/liblzma/.libs/liblzma.a:
 	cd liblzma && ./autogen.sh && ./configure
 	make -C liblzma CFLAGS=-fpic
-	
+
 LIBLZMA = liblzma/src/liblzma/.libs/liblzma.a
 
 GCC_VERSION:=$(shell gcc -dumpversion)
@@ -53,7 +53,7 @@ $(DIRS):
 
 clean:
 	echo $(GCC_MACHINE) $(GCC_VERSION)
-	rm -f $(OBJS) $(PROGS) $(RES) res/*
+	rm -f $(OBJS) $(PROGS) $(RES) res/* agent.*.debug
 
 testprog: bin/testprog
 wallclock: bin/wallclock
@@ -114,7 +114,7 @@ res/agent.0x00000000.wh.o: res/agent.0x00000000.wh
 
 POBJS_AGENT = $(OBJS_BOOTUP) res/relocations.o res/agent.0x00000000.wh.o
 
-res/relagent: $(POBJS_AGENT) Makefile script-loader 
+res/relagent res/relagent.map: $(POBJS_AGENT) Makefile script-loader 
 	g++ -fuse-ld=gold -Wl,--oformat -Wl,binary -Wl,-Map=res/relagent.map \
 	-static -s -nostdlib -fPIE -fpic -Wl,--build-id=none \
 	-Wl,--start-group $(POBJS_AGENT) -Wl,--end-group -o $@ -T script-loader
@@ -143,7 +143,12 @@ res/agent.%.wh: res/agent.%.elf res/agent.%.bin elf_end
 	head -c $(shell ./header_size res/agent.$*.elf) res/agent.$*.elf >$@
 	tail -c +$(call plus, $* + 1, $(shell ./header_size res/agent.$*.elf)) res/agent.$*.bin >>$@
 	head -c $$(( $$(./elf_end res/agent.$*.elf) - $$(stat --format=%s res/agent.$*.bin) )) /dev/zero >>$@
-    
+
+agent.%.debug: res/relagent.map
+	echo Building debug for agent loaded at $*
+	make res/agent.$$(($* + $$(sed -n '/^.agent.bin/ s/.*\(0x.* \).*/\1/ p' res/relagent.map))).elf
+	cp res/agent.$$(($* + $$(sed -n '/^.agent.bin/ s/.*\(0x.* \).*/\1/ p' res/relagent.map))).elf $@
+
 DEBUG = -O0 -g
 
 $(OBJS_AGENT_CPP): obj/agent/%.o: src/%.cpp
