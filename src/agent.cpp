@@ -529,7 +529,7 @@ bool Agent::load_symbols(const std::string& library, uint64_t begin)
 
       Elf_Xword sym_no = symbols.get_symbols_num();
       if ( sym_no > 0 ) {
-        for ( Elf_Half i = 0; i < sym_no; ++i ) {
+        for ( Elf_Xword i = 0; i < sym_no; ++i ) {
           std::string   name;
           Elf64_Addr    value   = 0;
           Elf_Xword     size    = 0;
