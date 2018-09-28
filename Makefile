@@ -63,7 +63,7 @@ libagent.so: $(OBJS_AGENT) libunwind liblzma Makefile
     -o libagent.so $(OBJS_AGENT) $(LIBUNWIND) $(LIBLZMA) -pthread
 
 SOBJS_SRC = \
-	Scrt1.o \
+	crt1.o \
 	crti.o \
 	crtn.o \
 	libm.a \
@@ -149,7 +149,7 @@ agent.%.debug: res/relagent.map
 	make res/agent.$$(($* + $$(sed -n '/^.agent.bin/ s/.*\(0x.* \).*/\1/ p' res/relagent.map))).elf
 	cp res/agent.$$(($* + $$(sed -n '/^.agent.bin/ s/.*\(0x.* \).*/\1/ p' res/relagent.map))).elf $@
 
-DEBUG = -O0 -g
+DEBUG = -O3
 
 $(OBJS_AGENT_CPP): obj/agent/%.o: src/%.cpp
 	g++ -c $< -o $@ -fPIC -Ielfio $(DEBUG)
