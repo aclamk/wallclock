@@ -242,7 +242,6 @@ void thread_sampling_ctx::consume()
   uint64_t* pos = conv->consume_pos();
   ssize_t avail = conv->consume_avail();
   ssize_t avail_copy = avail;
-
   while (avail > 0)
   {
     pfunc++;
@@ -269,7 +268,6 @@ void thread_sampling_ctx::consume()
       node->hit_count++;
     pos = conv->next(pos);
     avail--;
-
   }
   conv->consumed += avail_copy;
 }
@@ -282,9 +280,7 @@ void thread_sampling_ctx::peek()
 bool thread_sampling_ctx::dump_tree(UnixIO& io, uint32_t total_samples, double suppress)
 {
   bool res;
-  res = root->dump_tree(0, io, total_samples, suppress);
-  uint32_t depth = 0xffffffff;
-  if (res) io.write(depth);
+  res = root->dump_tree(io, total_samples, suppress);
   return res;
 }
 

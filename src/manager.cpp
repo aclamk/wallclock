@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <algorithm>
 
 int monitored_thread::inject_func(user_regs_struct& regs,
                                        interruption_func func,
@@ -346,7 +347,6 @@ bool monitored_thread::pause_outside_syscall()
   return false;
 }
 
-
 bool monitored_thread::inject_syscall(std::function<void(user_regs_struct&)> prepare_regs, user_regs_struct& result)
 {
   uint64_t syscall_rip;
@@ -383,7 +383,6 @@ bool monitored_thread::inject_syscall(std::function<void(user_regs_struct&)> pre
   if (!write_regs(saved_regs)) return false;
   return true;
 }
-
 
 bool monitored_thread::inject_syscall(uint64_t syscall_rip,
                                       std::function<void(user_regs_struct&)> prepare_regs,
@@ -457,15 +456,73 @@ bool monitored_thread::execute_remote(interruption_func* func,
   return true;
 }
 
-
-
-bool connect_client(uint64_t socket_hash)
+struct callstep_m
 {
+  std::string name;
+  uint64_t hit_count;
+  std::vector<callstep_m> children;
+  bool read(UnixIO& io)
+  {
+    bool res = true;
+    uint32_t depth;
+    if (res) res = io.read(name);
+    if (res) res = io.read(hit_count);
+    if (res) res = io.read(depth);
+    if (res) {
+      children.resize(depth);
+      for (auto &x : children) {
+        if (res) res = x.read(io);
+      }
+    }
+    return res;
+  }
 
+  void reorder()
+  {
+    struct {
+      bool operator()(callstep_m& a, callstep_m& b) const
+      {
+        return a.hit_count > b.hit_count;
+      }
+    } descending;
+    std::sort(children.begin(), children.end(), descending);
 
+    for (auto &x: children)
+      x.reorder();
+  }
 
-  return false;
-}
+  void print(std::ostream& output, std::vector<uint32_t>& depths, uint32_t depth, uint64_t total_samples)
+  {
+    if (depth >= depths.size())
+      depths.resize(depth+1);
+    depths[depth] = children.size();
+
+    if(depth > 0)
+    {
+      for(size_t i = 0; i < depth - 1; i++)
+      {
+        if (depths[i] == 0)
+          output << "  ";
+        else
+          output << "| ";
+      }
+      double d = hit_count * 100. / total_samples;
+      char str[10];
+      sprintf(str, "%2.2lf",d);
+      int     status;
+      char   *realname;
+
+      realname = abi::__cxa_demangle(name.c_str(), 0, 0, &status);
+      output << "+ " << str << "% " <<
+          (status == 0 ? realname : name.c_str()) << std::endl;
+      free(realname);
+      depths[depth - 1]--;
+    }
+    for (auto &x : children) {
+      x.print(output, depths, depth + 1, total_samples);
+    }
+  }
+};
 
 bool Manager::dump_tree(std::ostream& output, pid_t tid, double suppress)
 {
@@ -480,51 +537,18 @@ bool Manager::dump_tree(std::ostream& output, pid_t tid, double suppress)
   if (res) res = io.write(suppress);
 
   std::string tid_name;
-  res = io.read(tid_name);
+  if (res) res = io.read(tid_name);
   if (res) res = io.read(total_samples);
   if (res) res = io.read(time_suspended);
   output << "Thread: " << tid << " (" << tid_name << ") - " << total_samples << " samples, time suspended=" <<
       time_suspended/(1000*1000) << "ms" << std::endl;
   output << std::endl;
+
+  callstep_m root;
+  if (res) res = root.read(io);
   std::vector<uint32_t> depths;
-
-  uint32_t depth;
-  do
-  {
-    if (res) res = io.read(depth);
-    if (res && depth != 0xffffffff) {
-      if (res) res = io.read(name);
-      if (res) res = io.read(hit_count);
-      uint32_t child_count;// = children.size();
-      if (res) res = io.read(child_count);
-      if(depth <= depths.size())
-        depths.resize(depth+1);
-      depths[depth] = child_count;
-
-      if(depth > 0)
-      {
-        for(size_t i = 0; i < depth - 1; i++)
-        {
-          if (depths[i] == 0)
-            output << "  ";
-          else
-            output << "| ";
-        }
-        double d = hit_count * 100. / total_samples;
-        char str[10];
-        sprintf(str, "%2.2lf",d);
-        int     status;
-        char   *realname;
-
-        realname = abi::__cxa_demangle(name.c_str(), 0, 0, &status);
-        output << "+ " << str << "% " <<
-            (status == 0 ? realname : name.c_str()) << std::endl;
-        free(realname);
-        depths[depth - 1]--;
-      }
-    }
-  }
-  while (res && depth != 0xffffffff);
+  if (res) root.reorder();
+  if (res) root.print(output, depths, 0, total_samples);
   output << std::endl;
   return res;
 }

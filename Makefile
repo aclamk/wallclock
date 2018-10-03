@@ -42,7 +42,7 @@ OBJS_WALLCLOCK = obj/wallclock/manager.o \
 
 OBJS = $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT)
 OBJ_DIRS = $(sort $(dir $(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT)))
-#$(OBJS_WALLCLOCK) $(OBJS_BOOTUP) $(OBJS_AGENT): $(OBJ_DIRS)
+
 PROGS = copy_header find_relocs header_size bin/testprog bin/wallclock
 RES = res/relocations res/relocations.o res/header res/headers.o
 

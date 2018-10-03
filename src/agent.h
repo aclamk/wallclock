@@ -23,7 +23,7 @@ class thread_sampling_ctx
 
 public:
   ~thread_sampling_ctx();
-  pid_t tid;
+  pid_t tid{0};
   std::atomic<bool> lock{false};
   std::atomic<bool> notified{false};
   conveyor* conv{nullptr};
