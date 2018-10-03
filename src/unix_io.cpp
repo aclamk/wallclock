@@ -16,7 +16,7 @@ int UnixIO::server(uint64_t some_id)
   struct sockaddr_un serv_addr;
   serv_addr.sun_family = AF_UNIX;
   serv_addr.sun_path[0] = 0;
-  int len = sprintf(serv_addr.sun_path + 1, "/wallclock/%d", some_id);
+  int len = sprintf(serv_addr.sun_path + 1, "/wallclock/%lu", some_id);
   serv_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (serv_fd != -1)
   {
@@ -68,7 +68,7 @@ int UnixIO::connect(uint64_t some_id)
   struct sockaddr_un conn_addr;
   conn_addr.sun_family = AF_UNIX;
   conn_addr.sun_path[0] = 0;
-  int len = sprintf(conn_addr.sun_path + 1, "/wallclock/%d", some_id);
+  int len = sprintf(conn_addr.sun_path + 1, "/wallclock/%lu", some_id);
   conn_fd = socket(AF_UNIX, SOCK_STREAM, 0);
   if (conn_fd != -1)
   {

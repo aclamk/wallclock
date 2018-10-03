@@ -53,6 +53,7 @@ public:
   bool set_image();
   bool get_memory();
   std::pair<std::string, int64_t> get_symbol(uint64_t ip_addr);
+  static int dl_iterate_phdr (int (*) (struct dl_phdr_info *, size_t, void *), void *);
 
   enum {
     CMD_TERMINATE=3,
@@ -77,6 +78,9 @@ private:
   std::vector<thread_sampling_ctx*> threads;
   UnixIO io;
   std::map<uint64_t, Symbol> symbols;
+  static int (*dl_iterate_phdr_ptr) (
+      int (*) (struct dl_phdr_info *, size_t, void *),
+      void *);
   bool worker(pid_t pid);
   int read_command();
   bool dump_tree(thread_sampling_ctx* tsx, uint32_t total_samples, double suppress);
@@ -86,8 +90,8 @@ private:
   bool ptrace_attach(pid_t pid);
   bool ptrace_detach(pid_t pid);
   bool detach_threads();
-
   bool probe();
+
   friend int backtrace_reader(void* arg);
 };
 

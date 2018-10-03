@@ -35,7 +35,6 @@
 #include <fcntl.h>
 
 #include <poll.h>
-#include <unistd.h>
 #include <sys/syscall.h>
 #define local_assert(x) do { if(!(x)) *(char*)nullptr=0; } while(false)
 
@@ -46,6 +45,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <elfio/elfio.hpp>
+
+#include <link.h>
 
 extern "C"
 void _init_wallclock();
@@ -509,6 +510,9 @@ bool Agent::get_memory()
   return res;
 }
 
+int (*dl_iterate_phdr_ptr) (int (*callback) (struct dl_phdr_info *info,
+                                    size_t size, void *data), void *data) = nullptr;
+
 bool Agent::load_symbols(const std::string& library, uint64_t begin)
 {
   using namespace ELFIO;
@@ -541,6 +545,10 @@ bool Agent::load_symbols(const std::string& library, uint64_t begin)
           if (type == STT_FUNC && section != 0 && section < n)
           {
             this->symbols.emplace(begin + (uint64_t)value, Symbol{name, (int64_t)size});
+            if (name == "dl_iterate_phdr")
+              dl_iterate_phdr_ptr = (int (*)(
+                  int (*callback) (struct dl_phdr_info *, size_t, void *),
+                  void *)) (begin + value);
           }
         }
       }
@@ -564,6 +572,25 @@ std::pair<std::string, int64_t> Agent::get_symbol(uint64_t ip_addr)
 
 }
 
+int (*Agent::dl_iterate_phdr_ptr) (int (*callback) (struct dl_phdr_info *info,
+                                    size_t size, void *data), void *data) = nullptr;
+int Agent::dl_iterate_phdr (int (*callback) (struct dl_phdr_info *info,
+                                    size_t size, void *data), void *data)
+{
+  if (dl_iterate_phdr_ptr)
+    return (*dl_iterate_phdr_ptr)(callback, data);
+  else
+    return 0;
+}
+
+extern "C"
+int dl_iterate_phdr (int (*callback) (struct dl_phdr_info *info,
+                                    size_t size, void *data), void *data);
+int dl_iterate_phdr (int (*callback) (struct dl_phdr_info *info,
+                                    size_t size, void *data), void *data)
+{
+  return Agent::dl_iterate_phdr(callback, data);
+}
 
 bool Agent::worker(pid_t pid)
 {
