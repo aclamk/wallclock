@@ -29,6 +29,7 @@
 #include <thread>
 #include <dlfcn.h>
 #include <iomanip>
+#include <sys/time.h>
 extern RemoteAPI agent_interface;
 RemoteAPI agent_interface_remote;
 
@@ -193,6 +194,13 @@ extern "C" {
   extern char _binary_relagent_end[0];
 }
 
+static double now()
+{
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  return tv.tv_sec + tv.tv_usec * 10e-6;
+}
+
 bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace,
                        std::pair<uint64_t, uint64_t>& addr)
 {
@@ -200,23 +208,27 @@ bool load_binary_agent(pid_t remote, pid_t remote_leader, bool pause_for_ptrace,
   bool sized_something = false;
   std::set<pid_t> threads = list_threads_in_group(remote_leader);
 
-  for(auto i = threads.begin(); i != threads.end(); i++)
+  double start = now();
+  do
   {
-    monitored_thread pt;
-    if (pt.seize(*i)) {
-      sized_something = true;
-      pt.locate_syscall(&syscall_rip);
-      pt.detach();
-      break;
+    for(auto i = threads.begin(); i != threads.end(); i++)
+    {
+      monitored_thread pt;
+      if (pt.seize(*i)) {
+	sized_something = true;
+	pt.locate_syscall(&syscall_rip);
+	pt.detach();
+	break;
+      }
     }
-  }
-
+    if (rand() % 5) usleep(100);
+  } while (sized_something == false || syscall_rip == 0 || now() - start < 5);
+  
   if (sized_something == false) {
     std::cout << "Unable to attach to threads. "
-        "Check setting of /proc/sys/kernel/yama/ptrace_scope." << std::endl;
+      "Check setting of /proc/sys/kernel/yama/ptrace_scope." << std::endl;
     return false;
   }
-
   if (syscall_rip == 0) {
     if (verbose_level >= 2)
       std::cout << "Unable to pause process and find a syscall." << std::endl;
