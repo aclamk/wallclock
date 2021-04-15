@@ -3,7 +3,7 @@
 	url = https://github.com/kobolabs/liblzma.git
 [submodule "libunwind"]
 	path = libunwind
-	url = https://github.com/pathscale/libunwind.git
+	url = https://github.com/libunwind/libunwind.git
 [submodule "elfio"]
 	path = elfio
 	url = https://github.com/aclamk/elfio.git
