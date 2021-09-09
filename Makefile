@@ -152,7 +152,7 @@ agent.%.debug: res/relagent.map
 DEBUG = -O3
 
 $(OBJS_AGENT_CPP): obj/agent/%.o: src/%.cpp
-	g++ -c $< -o $@ -fPIC -Ielfio $(DEBUG)
+	g++ -c $< -o $@ -fPIC -Ielfio -Ilibunwind/include $(DEBUG)
 $(OBJS_AGENT_ASM): obj/agent/%.o: src/%.asm
 	as -c $< -o $@
 $(OBJS_AGENT_EXTRA): obj/agent/%.o: src/%.cpp
@@ -164,7 +164,7 @@ $(OBJS_BOOTUP_ASM): obj/bootup/%.o: src/%.asm
 	as -c $< -o $@
 
 $(OBJS_WALLCLOCK): obj/wallclock/%.o: src/%.cpp
-	g++ -c $< -o $@ $(DEBUG)
+	g++ -c $< -o $@ -Ilibunwind/include $(DEBUG)
 
 obj/%.o: src/%.cpp
 	g++ -c $< -o $@ $(DEBUG)
@@ -186,7 +186,7 @@ bin/test_agent_anyplace: src/test_agent_anyplace.cpp pagent.rel
 
 
 bin/wallclock: $(OBJS_WALLCLOCK) libagent.so res/relagent.o res bin
-	g++ -o $@ $(OBJS_WALLCLOCK) res/relagent.o -lpthread -lunwind -ldl
+	g++ -o $@ $(OBJS_WALLCLOCK) res/relagent.o -lpthread -ldl
 
 bin/testprog: src/testprog.cpp obj/largecode.o bin
 	g++ src/testprog.cpp obj/largecode.o -o $@ -lpthread
